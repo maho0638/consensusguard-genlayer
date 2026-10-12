@@ -78,14 +78,14 @@ finalized and the contract read-back matched the stored decision.
 
 ## Local regression suite after Studio run
 
-After the Studio run, the full local suite was repeated:
+The historical post-deployment local suite at that point was:
 
 ```text
 66 passed, 1 skipped in 2.82s
 SKIPPED tests/test_studio_multivalidator.py: set CONSENSUSGUARD_RUN_STUDIO=1 to run against local GenLayer Studio
 ```
 
-The skipped test is the separate **local five-validator harness**; this does
+The final later suite, after the additional C1 URL-control regression, is **67 passed, 1 skipped**; see `final-local-tests.log`. The skipped test is the separate **local five-validator harness**; this does
 not negate or replace the live Studio Dev transaction above. The Studio
 transaction was executed in the browser and is not represented as a passing
 local integration test. Other post-run checks passed: compileall, 3 GenVM AST

@@ -58,7 +58,7 @@ independence claim. It has no publisher registry or signature system.
 | `requirements-dev.txt`, `requirements-lock.txt` | Top-level test/linter requirements and exact Python dependency freeze. |
 | `toolchain.lock.json`, `scripts/verify_toolchain_bundles.py` | SHA-256 pins for the Direct Mode and lint GenVM archives and a verifier run after those tools download their bundles. |
 | `scripts/build_handoff.py` | Rebuilds the handoff ZIP and verifies unique members, complete inventory, member SHA-256 values, and ZIP CRC. |
-| `.github/workflows/quality.yml` | Reproducible CI job: Ubuntu 24.04, Python 3.12.14, exact Python lock, pinned test/lint GenVM versions and bundle hash verification. It has not been run on GitHub Actions. |
+| `.github/workflows/quality.yml` | Reproducible CI job: Ubuntu 24.04, Python 3.12.14, exact Python lock, pinned test/lint GenVM versions and bundle hash verification. GitHub Actions run 38314656919 on commit `4f32baa9eb661f7118bc2ab59d10b61472db4cc1` passed; see `evidence/github-ci.md`. |
 | `DEPENDENCIES.md` | SDK, GenVM bundle, simulator, and linter identities. |
 | `README.md` | Overview, guarantees, API and current state. |
 | `ARCHITECTURE.md` | Data flow, separation of nondeterministic/deterministic operations, threshold table. |
@@ -207,9 +207,10 @@ Python 3.12.14; pinned project dependencies. Latest expected output is recorded
 in `evidence/`:
 
 - `python -m compileall -q contracts tests` — pass.
-- `pytest -q` — **66 passed, 1 skipped**: 63 Direct Mode tests plus 3 GLSim
-  checks pass; the opt-in Studio test is skipped. The suite includes the
-  original 33 passing tests before added regressions.
+- Final `pytest -q -ra -v` — **67 passed, 1 skipped** (68 collected): 64
+  Direct Mode cases plus 3 GLSim checks passed; the opt-in local Studio test
+  is skipped. Includes the original 33 passing tests and added security
+  regressions including the encoded C1 control test.
 - `genvm-lint lint contracts/consensus_guard.py --json` — pass, 3 AST checks.
 - `scripts/check_contract_sdk.py` — pass, schema extracted by the exact pinned
   SDK (8 public methods).
@@ -218,8 +219,10 @@ in `evidence/`:
 - `pip check` — pass.
 - Toolchain verifier — runner and SDK ZIP SHA-256 values match
   `toolchain.lock.json`. Direct Mode, GLSim, schema extraction, and Pyright use
-  the same SDK identity as Studio Dev. The installed linter's semantic loader
-  is obsolete (`genlayer.py` import); only its AST lint is counted as passed.
+  the same SDK identity as Studio Dev. GenVM AST lint passes. GenVM semantic
+  `check`/`typecheck` did not pass: the linter's SDK artifact download was
+  denied by workspace network policy, including with cache redirected to
+  `/tmp`; see the raw attempts in `evidence/final-*lint*` and `*typecheck*`.
 - Strict cloudpickle dump/load round trips for both nondeterministic closures
   are enforced; the targeted check passed, as did the full suite.
 - Studio Dev live test — deployed and executed in Normal (Full Consensus)
@@ -227,14 +230,15 @@ in `evidence/`:
   `resolve(0)`, and state reads returned one case and one `VERIFIED` decision.
   The fixture is synthetic, designed to exercise byte hashes and classification;
   it says nothing about the truth of a real world claim or publisher
-  independence. The interface did not expose validator identities/count, so
-  this handoff claims consensus status but not a numeric participant quorum.
+  independence. Explorer reports five initial validator slots, 3 agree / 2
+  idle votes, and detailed execution records include idle errors; do not claim
+  five successful independent executions.
   The first `open_case` attempt failed with the expected duplicate-host
   rejection; the corrected retry is documented and succeeded.
 - Local five-validator Studio harness — remains skipped. It is a separate
   localnet test; follow `STUDIO_MULTIVALIDATOR_RUNBOOK.md` when a local GenLayer
   Studio network is available.
-- GitHub Actions, public testnet, and Portal — outcomes are separately recorded in the final status addendum. No public testnet or Portal action is evidenced.
+- GitHub Actions Quality run 38314656919 on full source commit `4f32baa9eb661f7118bc2ab59d10b61472db4cc1` — passed. Public testnet and Portal — not run/submitted.
 
 An initial typecheck attempt failed because `pyright` was not on `PATH`; the
 successful rerun set `PATH` to the project venv. Earlier no-network SDK/test
@@ -256,15 +260,12 @@ being hidden. The latest complete command output is authoritative.
 6. Keep the Studio Dev evidence, localnet test, public testnet, CI, deployment
    and Portal outcomes separate. Do not label a skipped/unrun check as passed.
 
-The installed GenVM linter's semantic loader is incompatible with the current
-SDK import layout; this was directly observed as `No module named genlayer.py`.
-The handoff uses the pinned SDK's own schema extractor and Pyright against its
-vendored source instead. Older evidence files preserve prior attempts, while
+The installed GenVM linter semantic check/typecheck needs an SDK artifact download; attempts with both its default cache and a writable `/tmp` cache were blocked by the workspace network policy. Those commands did not pass. The handoff uses the pinned SDK's own schema extractor and Pyright against its vendored source instead; both pass. Older evidence files preserve prior attempts, while
 the corrected current result and root cause are in
 `evidence/studio-dev-schema-investigation.md`.
 
 ## Current completion addendum — 2026-10-12
 
-The initial local review count above is historical. A new C1-percent-encoded URL control rejection was added with a targeted negative test; the complete final run and updated handoff ZIP are authoritative. The Studio Dev deployment and transaction are described in `evidence/studio-dev-live-validation.md`; the explorer data shows five validator slots but only 3 agree and 2 idle votes, with execution caveats. The approximate Explorer fee for the resolve transaction is 0.000097 GEN. This is not public testnet evidence. The local Studio harness is not equivalent to Studio Dev transaction consensus.
+Any earlier local test counts in historical audit sections are superseded by the final 67 passed / 1 skipped run. A new C1-percent-encoded URL control rejection was added with a targeted negative test; the complete final run and updated handoff ZIP are authoritative. The Studio Dev deployment and transaction are described in `evidence/studio-dev-live-validation.md`; the explorer data shows five validator slots but only 3 agree and 2 idle votes, with execution caveats. The approximate Explorer fee for the resolve transaction is 0.000097 GEN. This is not public testnet evidence. The local Studio harness is not equivalent to Studio Dev transaction consensus.
 
-For the latest GitHub branch/commit, Actions result, and final package hashes, inspect `evidence/final-status.md`, `evidence/github-ci.log`, `SHA256SUMS.txt`, and `evidence/archive-integrity.txt`. Portal submission remains intentionally unperformed. No mainnet funds or transaction were used.
+For the GitHub commit and Actions result, inspect `evidence/final-status.md` and `evidence/github-ci.md`; for final package hashes, inspect `SHA256SUMS.txt` and `evidence/archive-integrity.txt`. Portal submission remains intentionally unperformed. No mainnet funds or transaction were used.

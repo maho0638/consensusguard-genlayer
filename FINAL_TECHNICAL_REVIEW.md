@@ -190,3 +190,12 @@ All current details and exact available hashes/read-back data are in
 `evidence/studio-dev-live-validation.md`. The historical “not run” statements
 above describe the review snapshot before this addendum and are superseded for
 Studio Dev only; public testnet, GitHub Actions, and Portal were not used.
+
+
+## Final completion update — 2026-10-12
+
+The final full local suite is **67 passed, 1 skipped** (68 collected); details and raw output are in `evidence/final-local-tests.log`. The C1 percent-encoded control URL case is now rejected, with a regression test. Fresh compilation, SDK schema, Pyright, dependency consistency, toolchain hashes, and GenVM AST lint passed (`evidence/final-static-checks.log`). GenVM linter semantic `check` / `typecheck` were attempted but could not download their SDK artifact under this workspace's network policy; those checks remain unverified and are not reported as passes.
+
+Studio Dev Explorer evidence confirms the existing deployment and a finalized accepted Full Consensus resolve with five initial validator slots. The vote map is 3 agree / 2 idle, and execution records include idle errors; do not characterize this as five successful executions. The contract state read-back is `VERIFIED` for the controlled fixture. The transaction Explorer record reports an approximate 0.000097 GEN fee. A prior `open_case` failed with the duplicate-host guard and is recorded as a failure. No public testnet deployment, live appeal, induced real-validator disagreement/rollback, or Portal submission is claimed. GLSim's five-vote disagreement/rollback test is simulation-only.
+
+GitHub repo `maho0638/consensusguard-genlayer` was populated; Quality workflow run 38314656919 completed successfully for commit `4f32baa9eb661f7118bc2ab59d10b61472db4cc1`. See `evidence/github-ci.md`. This section supersedes earlier status in this historical review.
