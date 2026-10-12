@@ -2,7 +2,7 @@ Archive integrity report
 ========================
 Archive: consensusguard-complete-handoff.zip
 Root: consensusguard-genlayer/
-Members: 132
+Members: 138
 ZIP_CONTENTS.txt is the complete member inventory. SHA256SUMS.txt records
 SHA-256 for every member except itself. Validation checks:
 - unique member names and inventory equality: PASS

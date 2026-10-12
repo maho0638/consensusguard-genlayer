@@ -125,8 +125,15 @@ def main() -> None:
     write_metadata(files, names, verified=True)
     build_archive(output, names)
     verify_archive(output, names)
+    archive_sha256 = sha256(output)
+    sidecar = output.with_suffix(output.suffix + ".sha256")
+    sidecar.write_text(f"{archive_sha256}  {output.name}\n", encoding="ascii")
+    recorded_hash, recorded_name = sidecar.read_text(encoding="ascii").strip().split("  ", 1)
+    if recorded_hash != sha256(output) or recorded_name != output.name:
+        raise SystemExit("detached archive SHA-256 sidecar verification failed")
     print(f"PASS: {len(names)} unique members; every member hash and ZIP CRC verified")
-    print(f"SHA-256: {sha256(output)}")
+    print("PASS: detached archive SHA-256 sidecar verified")
+    print(f"SHA-256: {archive_sha256}")
     print(f"Bytes: {output.stat().st_size}")
 
 

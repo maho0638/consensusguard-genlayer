@@ -27,4 +27,4 @@ tests/test_studio_multivalidator.py s                                    [100%]
 
 =========================== short test summary info ============================
 SKIPPED [1] tests/test_studio_multivalidator.py:37: set CONSENSUSGUARD_RUN_STUDIO=1 to run against local GenLayer Studio
-======================== 67 passed, 1 skipped in 3.46s =========================
+======================== 67 passed, 1 skipped in 6.91s =========================

@@ -238,7 +238,7 @@ in `evidence/`:
 - Local five-validator Studio harness — remains skipped. It is a separate
   localnet test; follow `STUDIO_MULTIVALIDATOR_RUNBOOK.md` when a local GenLayer
   Studio network is available.
-- GitHub Actions Quality run 38314656919 on full source commit `4f32baa9eb661f7118bc2ab59d10b61472db4cc1` — passed. Public testnet and Portal — not run/submitted.
+- GitHub Actions Quality run 38314656919 on the full source commit and follow-up run 38314886697 on final documentation commit `e229385bd7676719fec5766788b57bd12ddcb89c` — both passed. Public testnet and Portal — not run/submitted.
 
 An initial typecheck attempt failed because `pyright` was not on `PATH`; the
 successful rerun set `PATH` to the project venv. Earlier no-network SDK/test
@@ -268,4 +268,4 @@ the corrected current result and root cause are in
 
 Any earlier local test counts in historical audit sections are superseded by the final 67 passed / 1 skipped run. A new C1-percent-encoded URL control rejection was added with a targeted negative test; the complete final run and updated handoff ZIP are authoritative. The Studio Dev deployment and transaction are described in `evidence/studio-dev-live-validation.md`; the explorer data shows five validator slots but only 3 agree and 2 idle votes, with execution caveats. The approximate Explorer fee for the resolve transaction is 0.000097 GEN. This is not public testnet evidence. The local Studio harness is not equivalent to Studio Dev transaction consensus.
 
-For the GitHub commit and Actions result, inspect `evidence/final-status.md` and `evidence/github-ci.md`; for final package hashes, inspect `SHA256SUMS.txt` and `evidence/archive-integrity.txt`. Portal submission remains intentionally unperformed. No mainnet funds or transaction were used.
+The latest GitHub `main` head is the completion commit described by the final report; the earlier successful source/docs commits and Actions runs are listed in `evidence/github-ci.md`. For Actions results, inspect that file; for final package hashes, inspect `SHA256SUMS.txt` and `evidence/archive-integrity.txt`. Portal submission remains intentionally unperformed. No mainnet funds or transaction were used.

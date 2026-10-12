@@ -1,0 +1,5 @@
+Final handoff archive build record
+Command: python scripts/build_handoff.py --output /workspace/scratch/afa2b66703d5/consensusguard-complete-handoff.zip
+Result: PASS — 138 unique ZIP members; inventory equality, every included member SHA-256, and ZIP CRC verified.
+Result: PASS — detached archive SHA-256 sidecar generated and re-read/verified by the builder.
+The final outer ZIP SHA-256 is also provided in the completion response; it cannot be embedded in its own archive without a circular hash.
