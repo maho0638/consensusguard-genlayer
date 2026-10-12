@@ -1,0 +1,26 @@
+INFO: File `gltest.config.yaml` found in the current directory, using it
+INFO: Clearing artifacts directory: artifacts
+INFO: Using the following configuration:
+INFO:   RPC URL: http://127.0.0.1:4000/api
+INFO:   Selected Network: localnet
+INFO:   Available networks: ['localnet', 'studionet']
+INFO:   Selected chain type: localnet
+INFO:   Available chains: localnet, studio_devnet, studionet, testnet_asimov, testnet_bradbury
+INFO:   Contracts directory: contracts
+INFO:   Artifacts directory: artifacts
+INFO:   Environment: .env
+INFO:   Default wait interval: 3000 ms
+INFO:   Default wait retries: 50
+INFO:   Leader only mode: False
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /workspace/scratch/afa2b66703d5/consensusguard-genlayer/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/scratch/afa2b66703d5/consensusguard-genlayer
+configfile: pyproject.toml
+plugins: anyio-4.15.1, genlayer-test-0.30.0rc2
+collecting ... collected 2 items
+
+tests/test_consensus_guard.py::test_direct_mode_enforces_nondeterministic_closure_pickling PASSED
+tests/test_consensus_guard.py::test_two_matching_classifications_record_verified_and_append_decision PASSED
+
+============================== 2 passed in 0.30s ===============================

@@ -1,0 +1,7 @@
+# Validation and remediation history
+
+- The initially available `.venv/bin/python` interpreter link was missing and one cached native `cytoolz` binary could not be imported. The environment was repaired locally using Python 3.12.14 and the package's generated C source; no project code depends on that repair.
+- Initial Direct Mode tests could not load the GenVM runner because the versioned SDK artifact was absent and network access was blocked. The official pinned runner was then fetched for local validation. No deployment or chain transaction was made.
+- First transient-outage regression failed because the test expected resolution to revert before the classifier, while the code still classified one remaining verified body. The contract was corrected to skip classification for below-threshold transient gaps; the test then passed.
+- The earlier GLSim dissent experiment only forced two of three rotations, then finalized. Follow-up found the local v0.3 storage adapter retained a stale slot after GLSim restored its manager. A test-only adapter rebuilds the descriptor after rotation. Corrected persistent-disagreement tests now pass; Studio remains untested.
+- Typecheck's first rerun could not find the installed pyright command because `.venv/bin` was absent from PATH. With the project venv on PATH, typecheck passed with zero diagnostics. Both attempts are retained in `typecheck-attempt.log`.

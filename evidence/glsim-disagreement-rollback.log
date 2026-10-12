@@ -1,0 +1,6 @@
+Command: .venv/bin/python -m pytest -q tests/test_glsim_consensus.py
+Date: 2026-10-12
+Exit code: 0
+Result: 3 passed in 0.06s
+
+Coverage: contract validator callback capture/agreement, persistent five-validator disagreement across three rotations with OPEN/zero-decision rollback using the local GenLayer storage descriptor compatibility shim, and isolated GLSim snapshot rollback. This is single-process simulator evidence; it does not prove Studio validator nodes or live-chain rollback.

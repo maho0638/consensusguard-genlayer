@@ -1,0 +1,18 @@
+Studio Dev schema-only proof (2026-10-12)
+Environment: Work Cloud Browser, Studio Dev UI v0.123.0-rc.7.
+Contract loaded: contracts/consensus_guard.py
+Contract SHA-256: 266f39aa6902a43868509e05f56fe6aaae712eaae527ca6f0afe372dd3c69207
+Runner shown in GenVM logs: py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng
+SDK shown in GenVM logs: py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0
+GenVM runtime shown in logs: v0.3.0-rc7-x86_64-linux-release
+
+Observed Run and Debug UI:
+- Contract consensus_guard.py
+- Not deployed yet.
+- Constructor Inputs: No parameters.
+- Deploy consensus_guard.py button displayed (not pressed).
+- Transactions: No transactions yet.
+- GenVM execution finished, stderr empty, stdout empty.
+- Schema return was kind=return; the Studio DOM exposed encoded schema listing appeal, case_count, decision_count, get_case, get_decision, get_latest_decision, open_case, resolve. The UI truncates the encoded schema string in its log viewer.
+
+No deployment, contract transaction, real validator test, Portal submission, or GEN spend was performed.

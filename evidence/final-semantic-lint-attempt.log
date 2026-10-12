@@ -1,0 +1,3 @@
+$ genvm-lint check contracts/consensus_guard.py --json (sandbox cache redirected to /tmp)
+{"ok":false,"lint":{"ok":true,"passed":3},"validate":{"ok":false,"errors":[{"code":"E101","msg":"Failed to load SDK: <urlopen error [Errno 1] Operation not permitted>"}]}}
+Warning: could not resolve latest GenVM version (<urlopen error [Errno 1] Operation not permitted>); falling back to v0.2.16

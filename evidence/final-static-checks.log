@@ -1,0 +1,26 @@
+$ python -m compileall -q contracts tests scripts
+PASS
+$ python scripts/verify_toolchain_bundles.py
+SHA-256 verified: vendor/runners/py-genlayer/5j/ycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng.zip
+SHA-256 verified: vendor/runners/py-lib-genlayer-std/kz/r02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0.zip
+Pinned GenVM runner and SDK present: py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng, py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0
+$ python scripts/check_contract_sdk.py
+{"constructor": {"kwparams": {}, "params": []}, "methods": ["appeal", "case_count", "decision_count", "get_case", "get_decision", "get_latest_decision", "open_case", "resolve"], "ok": true, "sdk": "py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0"}
+$ python -m pip check
+No broken requirements found.
+$ pyright -p pyrightconfig.json --outputjson
+{
+    "version": "1.1.414",
+    "time": "1791842122071",
+    "generalDiagnostics": [],
+    "summary": {
+        "filesAnalyzed": 1,
+        "errorCount": 0,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 1.603
+    }
+}
+
+$ genvm-lint lint contracts/consensus_guard.py --json
+{"ok":true,"passed":3}

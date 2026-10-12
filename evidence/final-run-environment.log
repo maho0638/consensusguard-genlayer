@@ -1,0 +1,43 @@
+Final verification snapshot: 2026-10-12T18:14:42Z
+Python: 3.12.14
+GenLayer Testing Suite: 0.30.0rc2
+genlayer-py: 0.19.0rc2
+GLSim: 0.30.0-rc.2
+genvm-linter: 0.11.0
+pytest: 9.1.1
+cloudpickle: 3.1.2
+Direct Mode / GLSim runner: GenVM v0.6.0-rc9; SHA-256 verified against toolchain.lock.json
+GenVM linter SDK bundle: v0.3.0-rc7; SHA-256 verified against toolchain.lock.json
+
+Final recorded checks:
+- pytest -ra -v: 66 passed, 1 skipped (63 Direct Mode, 3 GLSim; Studio opt-in skipped).
+- Focused security regression selection: 12 passed.
+- python -m compileall -q contracts tests: passed.
+- genvm-lint lint: passed, 3 AST checks.
+- genvm-lint check: passed, 3 AST checks and semantic validation for 8 methods;
+  I200 reports a newer runner is available.
+- genvm-lint typecheck: passed, zero diagnostics.
+- pip check: passed, no broken requirements.
+- verify_toolchain_bundles.py: both locked bundle SHA-256 values matched.
+- Direct Mode closure serialization: 2 pickling/round-trip tests passed.
+
+Studio multi-validator, GitHub Actions hosted execution, deployment, GEN fees,
+and Portal submission were not run. Full outputs are recorded in adjacent
+logs; failed preliminary environment attempts are described in
+final-review-attempts.md and are not counted as passing checks.
+
+Final rerun after the Studio schema compatibility change (2026-10-12):
+- `pytest -q -ra -v`: **66 passed, 1 skipped** in 0.66 seconds; includes the
+  fixed-width public schema regression. The sole skip is the opt-in local
+  Studio integration test.
+- `python -m compileall -q contracts tests`: passed.
+- `genvm-lint lint`: passed, 3 AST checks.
+- `genvm-lint check`: passed, 3 AST checks and semantic validation for 8
+  contract methods; I200 notes that a newer runner exists.
+- `genvm-lint typecheck`: passed with zero diagnostics.
+- `pip check`: passed, no broken requirements.
+- `verify_toolchain_bundles.py`: Direct Mode/GLSim `v0.6.0-rc9` and linter
+  bundle `v0.3.0-rc7` SHA-256 values both matched their lock entries.
+- Exact command outputs are in `pytest.log`, `compileall.log`,
+  `genvm-lint-ast.log`, `genvm-lint-check.log`, `typecheck-attempt.log`,
+  `pip-check.log`, and `toolchain-bundle-check.log`.

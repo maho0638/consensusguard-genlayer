@@ -1,0 +1,2 @@
+{"ok": false, "error": "Failed to download SDK: <urlopen error [Errno 1] Operation not permitted>"}
+Warning: could not resolve latest GenVM version (<urlopen error [Errno 1] Operation not permitted>); falling back to v0.2.16

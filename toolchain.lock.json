@@ -1,0 +1,12 @@
+{
+  "manager_release": "v0.6.0-rc5",
+  "bundle_url": "https://github.com/genlayerlabs/genvm-manager/releases/download/v0.6.0-rc5/genvm-universal.tar.xz",
+  "bundle_sha256": "bd30580f911338d5533460eca8ed714dec371de5803c04e41dbb96430aea7b6e",
+  "executor_source_commit": "49aa5746603f9a1b41a0144a87698de62a28282a",
+  "runner": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng",
+  "sdk": "py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0",
+  "artifacts": {
+    "vendor/runners/py-genlayer/5j/ycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng.zip": "2cbcc8389744c4321852d2c0b4bfcef0729bfd22467e2aaf0d4d204cf6f015eb",
+    "vendor/runners/py-lib-genlayer-std/kz/r02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0.zip": "9ff00155b44bb44bce8bbdae56ca5a2e68e17b47354f9f86ebfaba09d746a2a8"
+  }
+}

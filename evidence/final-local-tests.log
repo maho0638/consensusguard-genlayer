@@ -1,0 +1,30 @@
+INFO: File `gltest.config.yaml` found in the current directory, using it
+INFO: Clearing artifacts directory: artifacts
+INFO: Using the following configuration:
+INFO:   RPC URL: http://127.0.0.1:4000/api
+INFO:   Selected Network: localnet
+INFO:   Available networks: ['localnet', 'studionet']
+INFO:   Selected chain type: localnet
+INFO:   Available chains: localnet, studio_devnet, studionet, testnet_asimov, testnet_bradbury
+INFO:   Contracts directory: contracts
+INFO:   Artifacts directory: artifacts
+INFO:   Environment: .env
+INFO:   Default wait interval: 3000 ms
+INFO:   Default wait retries: 50
+INFO:   Leader only mode: False
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+rootdir: /workspace/scratch/afa2b66703d5/consensusguard-genlayer
+configfile: pyproject.toml
+testpaths: tests
+plugins: genlayer-test-0.30.0rc2, anyio-4.15.1
+collected 68 items
+
+tests/test_consensus_guard.py .......................................... [ 61%]
+......................                                                   [ 94%]
+tests/test_glsim_consensus.py ...                                        [ 98%]
+tests/test_studio_multivalidator.py s                                    [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_studio_multivalidator.py:37: set CONSENSUSGUARD_RUN_STUDIO=1 to run against local GenLayer Studio
+======================== 67 passed, 1 skipped in 3.46s =========================

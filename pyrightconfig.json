@@ -1,0 +1,12 @@
+{
+  "include": ["contracts/consensus_guard.py"],
+  "extraPaths": ["vendor/genvm/runners/genlayer-py-std/src"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportMissingModuleSource": false,
+  "reportAttributeAccessIssue": "none",
+  "reportArgumentType": "none",
+  "reportReturnType": "none",
+  "reportCallIssue": "none",
+  "reportOptionalMemberAccess": "none"
+}

@@ -1,0 +1,1 @@
+{"constructor": {"kwparams": {}, "params": []}, "methods": ["appeal", "case_count", "decision_count", "get_case", "get_decision", "get_latest_decision", "open_case", "resolve"], "ok": true, "sdk": "py-lib-genlayer-std:kzr02ndm9et4qkmbqpq5djjt5sme2yt76n7sz1qbzax0knt6mam0"}
