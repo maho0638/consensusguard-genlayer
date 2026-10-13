@@ -1,7 +1,7 @@
 name: ConsensusGuard independent five-validator Studio CI audit
 on:
   push:
-    branches: [audit/studio-123-5validator-20261013]
+    branches: [audit/studio-phase2-5validator-20261014]
     paths:
       - '.github/workflows/studio-audit.yml'
       - '.ci/studio-v123-compose.yml'
@@ -65,12 +65,13 @@ jobs:
             sleep 10
           done
           echo "::error::Consensus worker did not become healthy in 6 minutes"; exit 1
-      - name: Real five-validator original GenLayer Studio contract test
+      - name: Real five-validator full Studio deploy-open-resolve test
         shell: bash
         run: |
           set -uo pipefail
           export CONSENSUSGUARD_RUN_STUDIO=1
-          export CONSENSUSGUARD_PHASE1_ONLY=1
+          export CONSENSUSGUARD_PHASE1_ONLY=0
+          export CONSENSUSGUARD_PHASE2_ONLY=1
           set +e
           gltest tests/test_studio_multivalidator.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
           status=$?
@@ -174,12 +175,15 @@ jobs:
           docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
             -c "SELECT 'TX_AGE|status=' || status || '|since_accepted=' || round((EXTRACT(EPOCH FROM clock_timestamp()) - timestamp_awaiting_finalization)::numeric,0) || '|blocked_for=' || round(EXTRACT(EPOCH FROM (clock_timestamp()-blocked_at))::numeric,0) || '|appeal_deadline_delta=' || COALESCE(round((NULLIF(consensus_history->'latestDecision'->>'appealDeadline','')::numeric - EXTRACT(EPOCH FROM clock_timestamp()))::numeric,0)::text,'missing') FROM transactions WHERE status='ACCEPTED' ORDER BY created_at DESC LIMIT 3;" \
             >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'RESOLVE_CONSENSUS|status=' || status || '|type=' || type || '|validator_entries=' || CASE WHEN jsonb_typeof(consensus_data::jsonb->'validators')='array' THEN jsonb_array_length(consensus_data::jsonb->'validators')::text ELSE 'NA' END || '|votes_type=' || COALESCE(jsonb_typeof(consensus_data::jsonb->'votes'),'missing') FROM transactions WHERE type=2 ORDER BY created_at DESC LIMIT 1;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
           python - <<'PY'
           from pathlib import Path
           import re
           p=Path('/tmp/cg-safe-tx-status.txt')
           lines=p.read_text(errors='replace').splitlines() if p.exists() else []
-          safe=[s for s in lines if re.fullmatch(r'TX_(STATE|DETAIL|AGE)\|[A-Za-z0-9_|=.-]{1,240}',s)]
+          safe=[s for s in lines if re.fullmatch(r'(?:TX_(?:STATE|DETAIL|AGE)|RESOLVE_CONSENSUS)\|[A-Za-z0-9_|=.-]{1,240}',s)]
           p.write_text('\n'.join(safe or ['DB_STATUS_UNAVAILABLE'])+'\n', encoding='utf-8')
           for l in safe: print('SAFE_DB:',l)
           PY
@@ -212,7 +216,7 @@ jobs:
           output.write_text('\n'.join(result)+'\n',encoding='utf-8')
           for row in result: print('STUDIO_SAFE_WORKER:',row)
           PY
-      - name: Publish sanitized phase-one result on isolated audit branch
+      - name: Publish sanitized phase-two result on isolated audit branch
         if: always()
         shell: bash
         run: |
@@ -224,16 +228,20 @@ jobs:
           src = Path('/tmp/cg-private-pytest.log')
           lines = src.read_text(errors='replace').splitlines() if src.exists() else []
           output = [
-              '# ConsensusGuard local Studio phase-1 diagnostic',
+              '# ConsensusGuard local Studio phase-2 five-validator integration',
               '',
               'GitHub Actions run: ' + os.environ.get('GITHUB_RUN_ID', 'unknown'),
-              'Test scope: deployment and open_case ONLY; no resolve or appeal.',
+              'Test scope: deploy, open_case and nondeterministic resolve; no appeal or rollback.',
               'No validator configs, secrets or raw receipts are included.',
               '',
               '## Safe phase and transaction status checkpoints',
           ]
           phases = {'VALIDATORS_READY','FEES_QUOTED','DEPLOY_START','DEPLOY_DONE',
-                    'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS'}
+                    'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS',
+                    'FIVE_DISTINCT_REGISTERED_VALIDATORS','FIVE_VALIDATOR_MOCKS_READY',
+                    'RESOLVE_START','RESOLVE_FINALIZED','FIVE_VALIDATOR_RESOLVE_PASS',
+                    'REGISTERED_MOCK_1','REGISTERED_MOCK_2','REGISTERED_MOCK_3',
+                    'REGISTERED_MOCK_4','REGISTERED_MOCK_5'}
           pattern = re.compile(r'STUDIO_SAFE_WAIT_(START|DONE|FAILURE): (0x[0-9a-fA-F]{64}) status= ([A-Za-z_0-9]+)(?: (?:target|exception)= ([A-Za-z_0-9]+))?')
           for l in lines:
               if 'STUDIO_PHASE:' in l:
@@ -246,18 +254,18 @@ jobs:
           dbpath=Path('/tmp/cg-safe-tx-status.txt')
           output.extend(['','## Local transaction state summaries'])
           if dbpath.exists():
-              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','DB_STATUS_UNAVAILABLE'))])
+              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','RESOLVE_CONSENSUS|','DB_STATUS_UNAVAILABLE'))])
           event_path=Path('/tmp/cg-safe-worker-stages.txt')
           output.extend(['', '## Worker stages (counts only)'])
           if event_path.exists():
               output.extend(['- '+line for line in event_path.read_text().splitlines() if line.startswith('WORKER_STAGE|')])
           output.extend([
               '', '## Result',
-              'PASS' if any('STUDIO_PHASE: PHASE1_OPEN_CASE_PASS' in l for l in lines)
+              'PASS' if any('STUDIO_PHASE: FIVE_VALIDATOR_RESOLVE_PASS' in l for l in lines)
                         and any(re.search(r'\b1 passed\b', l) for l in lines)
               else 'NOT YET CONFIRMED / FAILED',
           ])
-          target = Path('evidence/audit-studio-open-case-phase1.md')
+          target = Path('evidence/audit-studio-phase2-5validator.md')
           target.parent.mkdir(parents=True, exist_ok=True)
           target.write_text('\n'.join(output) + '\n', encoding='utf-8')
           print('Safe diagnostic file generated:', target)
@@ -269,7 +277,7 @@ jobs:
             echo "No new audit diagnostics"; exit 0
           fi
           git commit -m "evidence(audit): capture sanitized phase-one transaction statuses"
-          git push origin HEAD:audit/studio-123-5validator-20261013
+          git push origin HEAD:audit/studio-phase2-5validator-20261014
       - name: Stop and remove ONLY disposable audit containers (preserve nothing)
         if: always()
         run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
