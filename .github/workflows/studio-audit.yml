@@ -171,14 +171,46 @@ jobs:
           docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
             -c "SELECT 'TX_DETAIL|' || status || '|type=' || type || '|mode=' || COALESCE(execution_mode::text, 'null') || '|timestamp_missing=' || (timestamp_awaiting_finalization IS NULL)::text || '|blocked=' || (blocked_at IS NOT NULL)::text || '|address_missing=' || (to_address IS NULL)::text || '|count=' || COUNT(*) FROM transactions GROUP BY status,type,execution_mode,(timestamp_awaiting_finalization IS NULL),(blocked_at IS NOT NULL),(to_address IS NULL) ORDER BY status;" \
             >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_AGE|status=' || status || '|since_accepted=' || round((EXTRACT(EPOCH FROM clock_timestamp()) - timestamp_awaiting_finalization)::numeric,0) || '|blocked_for=' || round(EXTRACT(EPOCH FROM (clock_timestamp()-blocked_at))::numeric,0) || '|appeal_deadline_delta=' || COALESCE(round((NULLIF(consensus_history->'latestDecision'->>'appealDeadline','')::numeric - EXTRACT(EPOCH FROM clock_timestamp()))::numeric,0)::text,'missing') FROM transactions WHERE status='ACCEPTED' ORDER BY created_at DESC LIMIT 3;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
           python - <<'PY'
           from pathlib import Path
           import re
           p=Path('/tmp/cg-safe-tx-status.txt')
           lines=p.read_text(errors='replace').splitlines() if p.exists() else []
-          safe=[s for s in lines if re.fullmatch(r'TX_(STATE|DETAIL)\|[A-Za-z0-9_|=.-]{1,240}',s)]
+          safe=[s for s in lines if re.fullmatch(r'TX_(STATE|DETAIL|AGE)\|[A-Za-z0-9_|=.-]{1,240}',s)]
           p.write_text('\n'.join(safe or ['DB_STATUS_UNAVAILABLE'])+'\n', encoding='utf-8')
           for l in safe: print('SAFE_DB:',l)
+          PY
+      - name: Identify finalization stage from worker event classes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker compose -p "$PROJECT" -f "$COMPOSE" logs --no-color consensus-worker > /tmp/cg-private-worker-timeline.log 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          src=Path('/tmp/cg-private-worker-timeline.log')
+          lines=src.read_text(errors='replace').splitlines() if src.exists() else []
+          categories={
+            'finalization_started': r'Finalizing transaction',
+            'finalization_done': r'Successfully finalized transaction',
+            'finalization_not_ready': r'not ready for finalization',
+            'finalization_accepted_repair': r'Repairing accepted message delivery',
+            'finalization_error': r'error during finalization|Failed to release finalization',
+            'worker_task_failed': r'Task failed',
+            'worker_recovery': r'Recovered [0-9]+ stuck transactions',
+            'worker_started': r'Starting consensus worker',
+          }
+          result=[]
+          for key, pattern in categories.items():
+              matches=[line for line in lines if re.search(pattern,line,re.I)]
+              result.append('WORKER_STAGE|'+key+'|count='+str(len(matches)))
+          output=Path('/tmp/cg-safe-worker-stages.txt')
+          output.write_text('\n'.join(result)+'\n',encoding='utf-8')
+          for row in result: print('STUDIO_SAFE_WORKER:',row)
           PY
       - name: Publish sanitized phase-one result on isolated audit branch
         if: always()
@@ -214,7 +246,11 @@ jobs:
           dbpath=Path('/tmp/cg-safe-tx-status.txt')
           output.extend(['','## Local transaction state summaries'])
           if dbpath.exists():
-              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','DB_STATUS_UNAVAILABLE'))])
+              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','DB_STATUS_UNAVAILABLE'))])
+          event_path=Path('/tmp/cg-safe-worker-stages.txt')
+          output.extend(['', '## Worker stages (counts only)'])
+          if event_path.exists():
+              output.extend(['- '+line for line in event_path.read_text().splitlines() if line.startswith('WORKER_STAGE|')])
           output.extend([
               '', '## Result',
               'PASS' if any('STUDIO_PHASE: PHASE1_OPEN_CASE_PASS' in l for l in lines)
