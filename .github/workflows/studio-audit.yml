@@ -53,7 +53,18 @@ jobs:
             exit 1
           fi
           docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
-          test "$(docker inspect --format '{{.State.Health.Status}}' cg123ci-consensus-worker-1)" = healthy
+          for attempt in $(seq 1 36); do
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' cg123ci-consensus-worker-1)"
+            echo "Worker startup check $attempt: $state"
+            if [ "$state" = healthy ]; then
+              echo "Consensus worker healthy"; exit 0
+            fi
+            if [ "$state" = unhealthy ] || [ "$state" = exited ]; then
+              echo "::error::Consensus worker failed during startup"; exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Consensus worker did not become healthy in 6 minutes"; exit 1
       - name: Real five-validator original GenLayer Studio contract test
         shell: bash
         run: |
