@@ -83,6 +83,21 @@ jobs:
           print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b1 passed\b',s) else 'CHECK_EXIT_CODE')
           print('STUDIO_TEST_LOG_LENGTH:', len(s))
           print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
+          # Safe exception detail: print error *kind* and a short message only,
+          # never raw receipts, validator configs or embedded private keys.
+          for line in s.splitlines()[-65:]:
+              line=line.strip()
+              if 'node_config' in line or 'private_key' in line or 'mock_response' in line:
+                  continue
+              if not (line.startswith('E   ') or line.startswith('gltest.exceptions.')
+                      or line.startswith('genlayer_py.') or line.startswith('ValueError:')
+                      or line.startswith('TypeError:') or line.startswith('RuntimeError:')):
+                  continue
+              line=line.split('receipt:')[0].split('receipt=')[0]
+              line=line.split('{')[0].split('[')[0]
+              line=re.sub(r'0x[0-9a-fA-F]{24,}', '[REDACTED_HEX]', line)
+              line=re.sub(r'(?i)(private.key|secret|token|api.key)\\s*[=:]\\s*\\S+',r'\\1=[REDACTED]',line)
+              print('STUDIO_SAFE_ERROR:',line[:280])
           for line in s.splitlines():
               if (re.match(r'^=+ (1 passed|1 failed|1 skipped|short test summary)', line) or
                   re.match(r'^FAILED (?:tests/|::)', line)):
