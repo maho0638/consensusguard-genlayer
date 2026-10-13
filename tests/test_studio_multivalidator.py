@@ -227,6 +227,42 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     )
     print("STUDIO_RESOLVE_ERROR_MARKERS: " +
           ",".join(word for word in diagnostic_words if word in debug_text), flush=True)
+    # Diagnostic is derived ONLY from the selected leader's local GenVM
+    # error records. Never print validator identities or full receipts.
+    genvm = leader.get("genvm_result")
+    if isinstance(genvm, dict):
+        vm_result = genvm.get("result")
+        if isinstance(vm_result, str):
+            try:
+                vm_result = json.loads(vm_result)
+            except (ValueError, TypeError):
+                vm_result = {}
+        if isinstance(vm_result, dict):
+            allowed_kinds = {"USER_ERROR", "VM_ERROR", "RETURN", "PANIC", "INTERNAL_ERROR"}
+            k = str(vm_result.get("kind", "")).upper()
+            print("STUDIO_RESOLVE_VM_KIND: " + (k if k in allowed_kinds else "OTHER"), flush=True)
+        diagnostics = genvm.get("genvm_log", [])
+        error_lines = []
+        for entry in diagnostics if isinstance(diagnostics, list) else []:
+            if not isinstance(entry, dict):
+                continue
+            message = str(entry.get("message", ""))
+            if any(word in message.lower() for word in (
+                "error", "traceback", "exception", "panic",
+                "invalid", "failed", "assertion", "attribute",
+            )):
+                import re
+                scrub = message.splitlines()[-1][:340]
+                scrub = re.sub(r"https?://[^\\s\"]+", "[URL]", scrub)
+                scrub = re.sub(r"0x[0-9a-fA-F]{16,}", "[HEX]", scrub)
+                scrub = re.sub(r"(?i)(api.key|token|password|secret|private.key)[^\\s,]*",
+                               "[REDACTED]", scrub)
+                scrub = re.sub(r"[^A-Za-z0-9 _./,:=()!?@\\[\\]-]", " ", scrub)
+                if scrub.strip():
+                    error_lines.append(scrub.strip()[:220])
+        print("STUDIO_RESOLVE_VM_ERROR_COUNT: " + str(len(error_lines)), flush=True)
+        for line in error_lines[-6:]:
+            print("STUDIO_RESOLVE_VM_ERROR: " + line, flush=True)
     try:
         current_case = json.loads(contract.get_case(args=[case_id]).call())
         print("STUDIO_RESOLVE_SAFE_CASE_STATE: " +
