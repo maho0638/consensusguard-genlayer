@@ -67,13 +67,12 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     # module stop/start on entering AND leaving temporal_snapshot(), which
     # can delay release of the claimed transaction after ACCEPTED.
     # Subsequent resolve tests still use full mocks (only in phase two).
-    phase1_context = (
-        {"genvm_datetime": transaction_context["genvm_datetime"]}
-        if os.environ.get("CONSENSUSGUARD_PHASE1_ONLY") == "1"
-        else transaction_context
-    )
-    print("STUDIO_PHASE: PERSISTENT_FIVE_VALIDATORS" if phase1_context is not transaction_context
-          else "STUDIO_PHASE: MOCK_FIVE_VALIDATORS", flush=True)
+    # Both the isolated phase-one check and later full-flow tests must use
+    # the five persistent Studio validators for deterministic deploy/open_case.
+    # Mock validator overrides are reserved exclusively for resolve(), which
+    # performs nondeterministic HTTP/LLM work.
+    phase1_context = {"genvm_datetime": transaction_context["genvm_datetime"]}
+    print("STUDIO_PHASE: PERSISTENT_FIVE_VALIDATORS", flush=True)
 
     # v0.123 Studio requires a valid fee distribution even on disposable localnet.
     # Use the official SDK fee quote rather than changing the production contract.
