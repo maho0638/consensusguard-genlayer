@@ -1,0 +1,100 @@
+name: ConsensusGuard independent five-validator Studio CI audit
+on:
+  push:
+    branches: [audit/studio-123-5validator-20261013]
+    paths:
+      - '.github/workflows/studio-audit.yml'
+      - '.ci/studio-v123-compose.yml'
+      - 'tests/test_studio_multivalidator.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  studio-five-validator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      COMPOSE_PARALLEL_LIMIT: '1'
+      COMPOSE: .ci/studio-v123-compose.yml
+      PROJECT: cg123ci
+    steps:
+      - name: Checkout exact isolated audit branch (never touches main)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install exact pinned test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-lock.txt
+          python -m pip check
+          python scripts/verify_toolchain_bundles.py
+      - name: Confirm untouched production contract and isolated Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(head -n 1 contracts/consensus_guard.py)" = '# v0.3.0'
+          grep -F 'py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng' contracts/consensus_guard.py > /dev/null
+          docker version
+          docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
+          if [ "$(docker compose -p "$PROJECT" -f "$COMPOSE" config --services | wc -l)" -ne 6 ]; then
+            echo "::error::Unexpected Compose service count"; exit 1
+          fi
+          echo "Pinned contract and six isolated services verified"
+      - name: Pull pinned official Studio v0.123.0-rc.7 images
+        run: docker compose -p "$PROJECT" -f "$COMPOSE" pull
+      - name: Start local full consensus stack, five mock validators later
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker compose -p "$PROJECT" -f "$COMPOSE" up -d consensus-worker; then
+            echo "::error::Isolated full-consensus stack failed to start"
+            docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+            exit 1
+          fi
+          docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+          test "$(docker inspect --format '{{.State.Health.Status}}' cg123ci-consensus-worker-1)" = healthy
+      - name: Real five-validator original GenLayer Studio contract test
+        shell: bash
+        run: |
+          set -uo pipefail
+          export CONSENSUSGUARD_RUN_STUDIO=1
+          set +e
+          gltest tests/test_studio_multivalidator.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
+          status=$?
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('/tmp/cg-private-pytest.log').read_text(errors='replace')
+          markers=['version_too_big','invalid_contract','wallet','insufficient','fee','connection refused',
+                   'error code','timeout','deploymenterror','transactionerror','executionerror']
+          print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b1 passed\b',s) else 'CHECK_EXIT_CODE')
+          print('STUDIO_TEST_LOG_LENGTH:', len(s))
+          print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
+          for line in s.splitlines():
+              if re.match(r'^=+ (1 passed|1 failed|1 skipped|short test summary)', line) or
+                 re.match(r'^FAILED (?:tests/|::)', line):
+                  print('TEST_SUMMARY:',line.split(' - ')[0][:180])
+          PY
+          echo "TEST_EXIT_CODE=$status"
+          exit "$status"
+      - name: Print sanitized service diagnostic only, never private test receipts
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+          docker compose -p "$PROJECT" -f "$COMPOSE" logs --no-color --tail=120 consensus-worker jsonrpc > /tmp/cg-private-services.log 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/cg-private-services.log').read_text(errors='replace').lower()
+          markers=['version_too_big','invalid_contract','runner malformed','too many requests',
+                   'feevalue','insufficient','out of memory','no such file','no module',
+                   'address already in use','connection refused','fatal','timeout','panic']
+          print('SERVICE_LOG_LENGTH:',len(s))
+          print('SERVICE_ERROR_MARKERS:',[m for m in markers if m in s])
+          PY
+      - name: Stop and remove ONLY disposable audit containers (preserve nothing)
+        if: always()
+        run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
