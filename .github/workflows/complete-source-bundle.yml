@@ -29,7 +29,7 @@ jobs:
           out=root/'package'
           code=out/'SOURCE_CODE'
           code.mkdir(parents=True)
-          files=subprocess.check_output(['git','ls-files','-z']).split(b'\\0')
+          files=subprocess.check_output(['git','ls-files','-z']).split(bytes([0]))
           entries={}
           for raw in files:
               if not raw: continue
@@ -46,23 +46,23 @@ jobs:
           assert 'SOURCE_CODE/evidence/final-local-tests.log' in entries
           proof=out/'START_HERE.txt'
           proof.write_text(
-              'CONSENSUSGUARD COMPLETE PINNED SOURCE AND EVIDENCE\\n'
-              'Production commit: '+commit+'\\n'
+              'CONSENSUSGUARD COMPLETE PINNED SOURCE AND EVIDENCE\n'
+              'Production commit: '+commit+'\n'
               'Official pinned GitHub CI 67 passed / 1 skipped: '
-              'https://github.com/maho0638/consensusguard-genlayer/actions/runs/38315222267\\n'
+              'https://github.com/maho0638/consensusguard-genlayer/actions/runs/38315222267\n'
               'Studio Dev FULL CONSENSUS deploy/open/resolve and read-back: '
-              'SOURCE_CODE/evidence/studio-dev-live-validation.md\\n'
-              'Studio Dev was FINALIZED with 3 agree / 2 idle. Not five successful validators.\\n'
+              'SOURCE_CODE/evidence/studio-dev-live-validation.md\n'
+              'Studio Dev was FINALIZED with 3 agree / 2 idle. Not five successful validators.\n'
               'Separate local 5-validator integration test is NOT proven passing by the pinned CI; '
-              'its opt-in test is skipped in ordinary CI.\\n'
-              'Live contract appeal and live disagreement/rollback remain unproven unless new evidence is separately supplied.\\n'
+              'its opt-in test is skipped in ordinary CI.\n'
+              'Live contract appeal and live disagreement/rollback remain unproven unless new evidence is separately supplied.\n'
               'This file contains source and documented historical test evidence, '
-              'not a claim of complete live-chain correctness.\\n',
+              'not a claim of complete live-chain correctness.\n',
               encoding='utf-8'
           )
           entries['START_HERE.txt']={'bytes':proof.stat().st_size,'sha256':hashlib.sha256(proof.read_bytes()).hexdigest()}
           manifest={'production_commit':commit,'tracked_file_count':len(entries)-1,'files':entries}
-          (out/'SHA256_MANIFEST.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\\n',encoding='utf-8')
+          (out/'SHA256_MANIFEST.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           for path,item in entries.items():
               data=(out/path).read_bytes()
               assert hashlib.sha256(data).hexdigest()==item['sha256']
