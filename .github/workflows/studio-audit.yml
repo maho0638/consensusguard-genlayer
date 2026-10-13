@@ -92,6 +92,10 @@ jobs:
               if line.startswith('STUDIO_SAFE_WAIT_START:') or line.startswith('STUDIO_SAFE_WAIT_DONE:') or line.startswith('STUDIO_SAFE_WAIT_FAILURE:'):
                   # Instrumentation prints only tx hash, status, wait target and exception class.
                   print(line[:300])
+          for line in s.splitlines():
+              if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
+                                   "STUDIO_RESOLVE_SAFE_CASE_STATE:")):
+                  print(line[:300])
           # The failure's top-level exception class (no traceback or receipts).
           safe_names=['TimeoutError','TransactionTimeoutError','TransactionError','DeploymentError','AssertionError','TransactionNotFound']
           print('STUDIO_EXCEPTION_CLASS_MARKERS:',[name for name in safe_names if name in s])
@@ -251,6 +255,11 @@ jobs:
               match = pattern.search(l)
               if match:
                   output.append('- WAIT_' + match[1] + ': ' + match[2] + ' status=' + match[3] + ' ' + str(match[4] or ''))
+          output.extend(['', '## Resolve outcome (restricted enum and marker fields)'])
+          for line in lines:
+              if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
+                                  "STUDIO_RESOLVE_SAFE_CASE_STATE:")):
+                  output.append('- ' + line[:300])
           dbpath=Path('/tmp/cg-safe-tx-status.txt')
           output.extend(['','## Local transaction state summaries'])
           if dbpath.exists():
@@ -265,18 +274,20 @@ jobs:
                         and any(re.search(r'\b1 passed\b', l) for l in lines)
               else 'NOT YET CONFIRMED / FAILED',
           ])
-          target = Path('evidence/audit-studio-phase2-5validator.md')
+          target = Path('evidence/audit-studio-phase2-5validator-' + os.environ.get('GITHUB_RUN_ID', 'unknown') + '.md')
           target.parent.mkdir(parents=True, exist_ok=True)
           target.write_text('\n'.join(output) + '\n', encoding='utf-8')
           print('Safe diagnostic file generated:', target)
           PY
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add evidence/audit-studio-open-case-phase1.md
+          git add evidence/audit-studio-phase2-5validator-*.md
           if git diff --cached --quiet; then
             echo "No new audit diagnostics"; exit 0
           fi
-          git commit -m "evidence(audit): capture sanitized phase-one transaction statuses"
+          git commit -m "evidence(audit): save sanitized phase-two consensus diagnostic"
+          git fetch origin audit/studio-phase2-5validator-20261014
+          git rebase origin/audit/studio-phase2-5validator-20261014
           git push origin HEAD:audit/studio-phase2-5validator-20261014
       - name: Stop and remove ONLY disposable audit containers (preserve nothing)
         if: always()
