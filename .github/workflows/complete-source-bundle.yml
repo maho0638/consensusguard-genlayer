@@ -1,0 +1,77 @@
+name: ConsensusGuard complete source + evidence SHA256 handoff
+on:
+  push:
+    branches: [audit/studio-123-5validator-20261013]
+    paths: ['.github/workflows/complete-source-bundle.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  make-full-source-artifact:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Fetch exact verified 67-test production source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 970a763bd0ee6edf368d1e5badab7d14b3090465
+          persist-credentials: false
+      - name: Build one ZIP-compatible package with all tracked code and proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess, shutil, hashlib, json, os
+          root=Path.cwd()
+          commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert commit=='970a763bd0ee6edf368d1e5badab7d14b3090465',commit
+          out=root/'package'
+          code=out/'SOURCE_CODE'
+          code.mkdir(parents=True)
+          files=subprocess.check_output(['git','ls-files','-z']).split(b'\\0')
+          entries={}
+          for raw in files:
+              if not raw: continue
+              rel=raw.decode()
+              if not (root/rel).is_file(): continue
+              dest=code/rel
+              dest.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copyfile(root/rel,dest)
+              data=dest.read_bytes()
+              entries['SOURCE_CODE/'+rel]={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+          assert len(entries)>80,len(entries)
+          assert 'SOURCE_CODE/contracts/consensus_guard.py' in entries
+          assert 'SOURCE_CODE/tests/test_studio_multivalidator.py' in entries
+          assert 'SOURCE_CODE/evidence/final-local-tests.log' in entries
+          proof=out/'START_HERE.txt'
+          proof.write_text(
+              'CONSENSUSGUARD COMPLETE PINNED SOURCE AND EVIDENCE\\n'
+              'Production commit: '+commit+'\\n'
+              'Official pinned GitHub CI 67 passed / 1 skipped: '
+              'https://github.com/maho0638/consensusguard-genlayer/actions/runs/38315222267\\n'
+              'Studio Dev FULL CONSENSUS deploy/open/resolve and read-back: '
+              'SOURCE_CODE/evidence/studio-dev-live-validation.md\\n'
+              'Studio Dev was FINALIZED with 3 agree / 2 idle. Not five successful validators.\\n'
+              'Separate local 5-validator integration test is NOT proven passing by the pinned CI; '
+              'its opt-in test is skipped in ordinary CI.\\n'
+              'Live contract appeal and live disagreement/rollback remain unproven unless new evidence is separately supplied.\\n'
+              'This file contains source and documented historical test evidence, '
+              'not a claim of complete live-chain correctness.\\n',
+              encoding='utf-8'
+          )
+          entries['START_HERE.txt']={'bytes':proof.stat().st_size,'sha256':hashlib.sha256(proof.read_bytes()).hexdigest()}
+          manifest={'production_commit':commit,'tracked_file_count':len(entries)-1,'files':entries}
+          (out/'SHA256_MANIFEST.json').write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\\n',encoding='utf-8')
+          for path,item in entries.items():
+              data=(out/path).read_bytes()
+              assert hashlib.sha256(data).hexdigest()==item['sha256']
+          print('COMPLETE_SOURCE_PACKAGE_OK files=',len(entries),'commit=',commit)
+          PY
+      - name: Upload single source/evidence artifact ZIP (no secrets, no private test receipt)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConsensusGuard_FULL_SOURCE_970a763_67tests
+          path: package/
+          if-no-files-found: error
+          retention-days: 30
