@@ -203,6 +203,35 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         wait_retries=90,
     )
     print("STUDIO_PHASE: RESOLVE_FINALIZED", flush=True)
+    # Sanitize diagnostics: statuses and controlled enum categories only.
+    # Never expose validator node_config, private keys, raw receipts, or calldata.
+    leader_data = resolved.get("consensus_data", {}).get("leader_receipt", [])
+    leader = leader_data[0] if isinstance(leader_data, list) and leader_data else {}
+    def _enum_name(value):
+        value = getattr(value, "value", value)
+        return str(value)[:60] if value is not None else "none"
+    print("STUDIO_RESOLVE_SAFE: status=" +
+          _enum_name(resolved.get("status_name", resolved.get("status"))) +
+          " execution=" +
+          _enum_name(resolved.get("tx_execution_result_name", resolved.get("tx_execution_result"))) +
+          " leader=" + _enum_name(leader.get("execution_result")) +
+          " vote=" + _enum_name(leader.get("vote")), flush=True)
+    debug_text = str(leader.get("genvm_result", {})).lower()[:50000]
+    diagnostic_words = (
+        "mock", "not found", "invalid", "json", "web", "http", "llm",
+        "timeout", "response", "contract", "revert", "duplicate",
+        "typeerror", "valueerror", "attributeerror", "failed",
+        "insufficient", "missing", "keyerror", "exception",
+    )
+    print("STUDIO_RESOLVE_ERROR_MARKERS: " +
+          ",".join(word for word in diagnostic_words if word in debug_text), flush=True)
+    try:
+        current_case = json.loads(contract.get_case(args=[case_id]).call())
+        print("STUDIO_RESOLVE_SAFE_CASE_STATE: " +
+              str(current_case.get("state", "unknown"))[:40], flush=True)
+    except Exception as exc:
+        print("STUDIO_RESOLVE_SAFE_CASE_STATE_ERROR: " +
+              type(exc).__name__, flush=True)
     assert tx_execution_succeeded(resolved), "resolve consensus execution failed"
 
     case = json.loads(contract.get_case(args=[case_id]).call())
