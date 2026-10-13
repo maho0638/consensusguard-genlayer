@@ -164,14 +164,54 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         print("STUDIO_PHASE: PHASE1_OPEN_CASE_PASS", flush=True)
         return
 
+    # Phase 2: configure the already registered five independent validators
+    # with canned HTTP/LLM answers. Do NOT use transaction-scoped overrides:
+    # Studio v0.123.0-rc.7 can leave the worker blocked after ACCEPTED when
+    # temporal_snapshot restores five temporary provider configurations.
+    registry_response = local_client.provider.make_request("sim_getAllValidators", [])
+    assert not registry_response.get("error"), "Cannot inspect registered Studio validators"
+    registered = registry_response.get("result", [])
+    assert isinstance(registered, list) and len(registered) == 5
+    addresses = [v.get("address") for v in registered]
+    assert all(isinstance(x, str) and x.startswith("0x") for x in addresses)
+    assert len(set(x.lower() for x in addresses)) == 5
+    print("STUDIO_PHASE: FIVE_DISTINCT_REGISTERED_VALIDATORS", flush=True)
+
+    # The test is isolated to disposable GitHub CI Studio containers.
+    # No private keys are logged, and no hosted validator settings are touched.
+    for i, validator in enumerate(registered):
+        mock = validators[i].to_dict()
+        response = local_client.provider.make_request(
+            "sim_updateValidator",
+            [
+                validator["address"],
+                int(validator.get("stake") or 1),
+                mock["provider"],
+                mock["model"],
+                mock["config"],
+                mock["plugin"],
+                mock["plugin_config"],
+            ],
+        )
+        assert not response.get("error"), (
+            "Local mock validator configuration failed for ordinal " + str(i)
+        )
+        print("STUDIO_PHASE: REGISTERED_MOCK_" + str(i + 1), flush=True)
+
+    assert int(local_client.provider.make_request("sim_countValidators", [])["result"]) == 5
+    print("STUDIO_PHASE: FIVE_VALIDATOR_MOCKS_READY", flush=True)
+
     case_id = 0
+    print("STUDIO_PHASE: RESOLVE_START", flush=True)
     resolved = contract.resolve(args=[case_id]).transact(
-        transaction_context=transaction_context,
+        transaction_context=phase1_context,
         consensus_max_rotations=3,
         fees=fees,
+        wait_until="finalized",
+        wait_retries=90,
     )
-    print("STUDIO_PHASE: RESOLVE_RECEIPT")
-    assert tx_execution_succeeded(resolved), "resolve execution failed"
+    print("STUDIO_PHASE: RESOLVE_FINALIZED", flush=True)
+    assert tx_execution_succeeded(resolved), "resolve consensus execution failed"
 
     case = json.loads(contract.get_case(args=[case_id]).call())
     decision = json.loads(contract.get_latest_decision(args=[case_id]).call())
@@ -180,3 +220,14 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     assert decision["outcome"] == "VERIFIED"
     assert decision["support_count"] == 2
     assert decision["verified_count"] == 2
+    assert contract.decision_count().call() == 1
+    assert decision["refute_count"] == 0
+    assert decision["reason_code"] == "SUPPORT_THRESHOLD_MET"
+    assert len(decision["source_results"]) == 2
+    assert all(
+        x["integrity"] == "VERIFIED" and x["label"] == "SUPPORTS"
+        for x in decision["source_results"]
+    )
+    assert case["appeal_used"] is False
+    print("STUDIO_PHASE: FIVE_VALIDATOR_RESOLVE_PASS", flush=True)
+
