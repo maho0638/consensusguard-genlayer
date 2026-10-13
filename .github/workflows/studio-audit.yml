@@ -160,6 +160,26 @@ jobs:
           for line in visible[-42:]:
               print('SERVICE_SAFE_DIAGNOSTIC:',line)
           PY
+      - name: Inspect local transaction-state database (status only)
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_STATE|' || status || '|count=' || count(*) FROM transactions GROUP BY status ORDER BY status;" \
+            > /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_DETAIL|' || status || '|type=' || type || '|mode=' || COALESCE(execution_mode::text, 'null') || '|timestamp_missing=' || (timestamp_awaiting_finalization IS NULL)::text || '|blocked=' || (blocked_at IS NOT NULL)::text || '|address_missing=' || (to_address IS NULL)::text || '|count=' || COUNT(*) FROM transactions GROUP BY status,type,execution_mode,(timestamp_awaiting_finalization IS NULL),(blocked_at IS NOT NULL),(to_address IS NULL) ORDER BY status;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/cg-safe-tx-status.txt')
+          lines=p.read_text(errors='replace').splitlines() if p.exists() else []
+          safe=[s for s in lines if re.fullmatch(r'TX_(STATE|DETAIL)\|[A-Za-z0-9_|=.-]{1,240}',s)]
+          p.write_text('\n'.join(safe or ['DB_STATUS_UNAVAILABLE'])+'\n', encoding='utf-8')
+          for l in safe: print('SAFE_DB:',l)
+          PY
       - name: Publish sanitized phase-one result on isolated audit branch
         if: always()
         shell: bash
@@ -191,6 +211,10 @@ jobs:
               match = pattern.search(l)
               if match:
                   output.append('- WAIT_' + match[1] + ': ' + match[2] + ' status=' + match[3] + ' ' + str(match[4] or ''))
+          dbpath=Path('/tmp/cg-safe-tx-status.txt')
+          output.extend(['','## Local transaction state summaries'])
+          if dbpath.exists():
+              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','DB_STATUS_UNAVAILABLE'))])
           output.extend([
               '', '## Result',
               'PASS' if any('STUDIO_PHASE: PHASE1_OPEN_CASE_PASS' in l for l in lines)
