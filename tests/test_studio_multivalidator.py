@@ -74,6 +74,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     validator_total = int(local_client.provider.make_request("sim_countValidators", [])["result"])
     print("LOCAL_STUDIO_VALIDATOR_COUNT:", validator_total)
     assert validator_total == 5, f"Expected exactly five initialized validators, got {validator_total}"
+    print("STUDIO_PHASE: VALIDATORS_READY")
     quote = local_client.estimate_transaction_fees({
         "leaderTimeunitsAllocation": 100,
         "validatorTimeunitsAllocation": 200,
@@ -84,15 +85,18 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     })
     assert isinstance(quote, dict) and "distribution" in quote and "feeValue" in quote
     fees = {"distribution": quote["distribution"], "feeValue": quote["feeValue"]}
+    print("STUDIO_PHASE: FEES_QUOTED")
 
     contract_path = Path(__file__).resolve().parents[1] / "contracts" / "consensus_guard.py"
     factory = get_contract_factory(contract_file_path=contract_path)
+    print("STUDIO_PHASE: DEPLOY_START")
     contract = factory.deploy(
         transaction_context=transaction_context,
         consensus_max_rotations=3,
         fees=fees,
     )
 
+    print("STUDIO_PHASE: DEPLOY_DONE")
     opened = contract.open_case(
         args=[
             "studio-five-validator",
@@ -106,7 +110,8 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         consensus_max_rotations=3,
         fees=fees,
     )
-    assert tx_execution_succeeded(opened), opened
+    print("STUDIO_PHASE: OPEN_RECEIPT")
+    assert tx_execution_succeeded(opened), "open_case execution failed"
     assert contract.case_count().call() == 1
 
     case_id = 0
@@ -115,7 +120,8 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         consensus_max_rotations=3,
         fees=fees,
     )
-    assert tx_execution_succeeded(resolved), resolved
+    print("STUDIO_PHASE: RESOLVE_RECEIPT")
+    assert tx_execution_succeeded(resolved), "resolve execution failed"
 
     case = json.loads(contract.get_case(args=[case_id]).call())
     decision = json.loads(contract.get_latest_decision(args=[case_id]).call())
