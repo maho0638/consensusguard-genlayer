@@ -73,8 +73,8 @@ jobs:
           print('STUDIO_TEST_LOG_LENGTH:', len(s))
           print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
           for line in s.splitlines():
-              if re.match(r'^=+ (1 passed|1 failed|1 skipped|short test summary)', line) or
-                 re.match(r'^FAILED (?:tests/|::)', line):
+              if (re.match(r'^=+ (1 passed|1 failed|1 skipped|short test summary)', line) or
+                  re.match(r'^FAILED (?:tests/|::)', line)):
                   print('TEST_SUMMARY:',line.split(' - ')[0][:180])
           PY
           echo "TEST_EXIT_CODE=$status"
