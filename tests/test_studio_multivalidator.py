@@ -177,27 +177,19 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     assert len(set(x.lower() for x in addresses)) == 5
     print("STUDIO_PHASE: FIVE_DISTINCT_REGISTERED_VALIDATORS", flush=True)
 
-    # The test is isolated to disposable GitHub CI Studio containers.
-    # No private keys are logged, and no hosted validator settings are touched.
-    for i, validator in enumerate(registered):
-        mock = validators[i].to_dict()
-        response = local_client.provider.make_request(
-            "sim_updateValidator",
-            [
-                validator["address"],
-                int(validator.get("stake") or 1),
-                mock["provider"],
-                mock["model"],
-                mock["config"],
-                mock["plugin"],
-                mock["plugin_config"],
-            ],
-        )
-        assert not response.get("error"), (
-            "Local mock validator configuration failed for ordinal " + str(i)
-        )
-        print("STUDIO_PHASE: REGISTERED_MOCK_" + str(i + 1), flush=True)
-
+    # GenLayer Studio integration tests use sim_replaceValidators to install
+    # one complete mocked validator pool atomically (one provider restart).
+    # Five consecutive sim_updateValidator calls would repeatedly restart
+    # the LLM module and risk the exact phase-one worker stall.
+    # This local replacement is safe: these are short-lived CI containers.
+    configs = [validator.to_dict() for validator in validators]
+    replaced = local_client.provider.make_request("sim_replaceValidators", [configs])
+    assert not replaced.get("error"), "Atomic local five-validator setup failed"
+    result = replaced.get("result")
+    assert isinstance(result, list) and len(result) == 5
+    configured_addresses = [v.get("address") for v in result]
+    assert all(isinstance(v, str) and v.startswith("0x") for v in configured_addresses)
+    assert len({v.lower() for v in configured_addresses}) == 5
     assert int(local_client.provider.make_request("sim_countValidators", [])["result"]) == 5
     print("STUDIO_PHASE: FIVE_VALIDATOR_MOCKS_READY", flush=True)
 
