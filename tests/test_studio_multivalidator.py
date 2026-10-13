@@ -44,7 +44,10 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     llm_response = {
         "nondet_exec_prompt": {
             "evidence classifier inside a smart contract":
-                '{"labels":["SUPPORTS","SUPPORTS"]}'
+                '{"labels":["SUPPORTS","SUPPORTS"]}',
+            # GenVM mock matcher supports the empty key as a safe default.
+            # Never fall through to an unavailable real API in isolated CI.
+            "": '{"labels":["SUPPORTS","SUPPORTS"]}'
         }
     }
     web_response = {
