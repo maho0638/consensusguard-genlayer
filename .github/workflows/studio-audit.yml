@@ -167,44 +167,40 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          import os
           import re
-          src=Path('/tmp/cg-private-pytest.log')
-          lines=src.read_text(errors='replace').splitlines() if src.exists() else []
-          output=[
+          src = Path('/tmp/cg-private-pytest.log')
+          lines = src.read_text(errors='replace').splitlines() if src.exists() else []
+          output = [
               '# ConsensusGuard local Studio phase-1 diagnostic',
               '',
-              'GitHub Actions run: ' + __import__('os').environ.get('GITHUB_RUN_ID', 'unknown'),
+              'GitHub Actions run: ' + os.environ.get('GITHUB_RUN_ID', 'unknown'),
               'Test scope: deployment and open_case ONLY; no resolve or appeal.',
-              'Private validator configs, secrets, receipt bodies, and RPC payloads excluded.',
+              'No validator configs, secrets or raw receipts are included.',
               '',
               '## Safe phase and transaction status checkpoints',
           ]
-          phases={'VALIDATORS_READY','FEES_QUOTED','DEPLOY_START','DEPLOY_DONE',
-                  'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS'}
+          phases = {'VALIDATORS_READY','FEES_QUOTED','DEPLOY_START','DEPLOY_DONE',
+                    'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS'}
+          pattern = re.compile(r'STUDIO_SAFE_WAIT_(START|DONE|FAILURE): (0x[0-9a-fA-F]{64}) status= ([A-Za-z_0-9]+)(?: (?:target|exception)= ([A-Za-z_0-9]+))?')
           for l in lines:
-              if l.startswith('STUDIO_PHASE:'):
-                  phase=l.partition(':')[2].strip()
+              if 'STUDIO_PHASE:' in l:
+                  phase = l.partition('STUDIO_PHASE:')[2].strip()
                   if phase in phases:
-                      output.append('- PHASE: '+phase)
-              elif l.startswith('STUDIO_SAFE_WAIT_'):
-                  # Strict allowlist: status/checkpoint and public transaction hash only.
-                  pattern=r'^STUDIO_SAFE_WAIT_(START|DONE|FAILURE): (0x[0-9a-fA-F]{64}) status= ([A-Za-z_0-9]+)(?: (?:target|exception)= ([A-Za-z_0-9]+))?        if: always()
-        run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
-
-                  match=re.fullmatch(pattern, l.strip())
-                  if match:
-                      output.append('- WAIT_'+match[1]+': '+match[2]+' status='+match[3]+' '+str(match[4] or ''))
+                      output.append('- PHASE: ' + phase)
+              match = pattern.search(l)
+              if match:
+                  output.append('- WAIT_' + match[1] + ': ' + match[2] + ' status=' + match[3] + ' ' + str(match[4] or ''))
           output.extend([
-              '',
-              '## Result',
-              'PASS' if any('STUDIO_PHASE: PHASE1_OPEN_CASE_PASS' in l for l in lines) and
-                        re.search(r'\\b1 passed\\b', '\\n'.join(lines)) else
-              'NOT YET CONFIRMED / FAILED (review phase checkpoints)',
+              '', '## Result',
+              'PASS' if any('STUDIO_PHASE: PHASE1_OPEN_CASE_PASS' in l for l in lines)
+                        and any(re.search(r'\b1 passed\b', l) for l in lines)
+              else 'NOT YET CONFIRMED / FAILED',
           ])
-          target=Path('evidence/audit-studio-open-case-phase1.md')
-          target.parent.mkdir(parents=True,exist_ok=True)
-          target.write_text('\\n'.join(output)+'\\n',encoding='utf-8')
-          print('Safe diagnostic file generated:',target)
+          target = Path('evidence/audit-studio-open-case-phase1.md')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text('\n'.join(output) + '\n', encoding='utf-8')
+          print('Safe diagnostic file generated:', target)
           PY
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
