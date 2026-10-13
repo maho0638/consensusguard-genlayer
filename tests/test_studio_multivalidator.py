@@ -64,6 +64,36 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     # v0.123 Studio requires a valid fee distribution even on disposable localnet.
     # Use the official SDK fee quote rather than changing the production contract.
     local_client = get_gl_client()
+
+    # Phase-1 instrumentation: only safe status fields, no validator configurations
+    # or receipts in CI logs. Each wait is inspected before and after polling.
+    original_wait = local_client.wait_for_transaction_receipt
+    def _safe_status(tx_hash):
+        try:
+            tx = local_client.get_transaction(transaction_hash=tx_hash)
+            return str(tx.get("status_name", tx.get("status", "UNKNOWN")))
+        except Exception as exc:
+            return "RPC_READ_FAILED_" + type(exc).__name__
+    def _audited_wait(*args, **kwargs):
+        tx_hash = kwargs.get("transaction_hash", args[0] if args else "")
+        print("STUDIO_SAFE_WAIT_START:", str(tx_hash)[:70],
+              "status=", _safe_status(tx_hash),
+              "target=", kwargs.get("wait_until", "decided"), flush=True)
+        try:
+            receipt = original_wait(*args, **kwargs)
+        except Exception as exc:
+            print("STUDIO_SAFE_WAIT_FAILURE:", str(tx_hash)[:70],
+                  "status=", _safe_status(tx_hash),
+                  "exception=", type(exc).__name__, flush=True)
+            # Do not include the original exception text: it can contain
+            # raw transaction receipts or validator private data.
+            raise AssertionError(
+                "Studio receipt wait failed; see safe status checkpoint"
+            ) from None
+        print("STUDIO_SAFE_WAIT_DONE:", str(tx_hash)[:70],
+              "status=", _safe_status(tx_hash), flush=True)
+        return receipt
+    local_client.wait_for_transaction_receipt = _audited_wait
     rpc_chain_response = local_client.provider.make_request("eth_chainId", [])
     rpc_chain_id = int(rpc_chain_response["result"], 16)
     sdk_chain_id = int(local_client.chain.id)
@@ -94,8 +124,10 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         transaction_context=transaction_context,
         consensus_max_rotations=3,
         fees=fees,
+        wait_until="finalized",
     )
 
+    print("STUDIO_PHASE: DEPLOY_FINALIZED", flush=True)
     print("STUDIO_PHASE: DEPLOY_DONE")
     opened = contract.open_case(
         args=[
@@ -109,10 +141,14 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         transaction_context=transaction_context,
         consensus_max_rotations=3,
         fees=fees,
+        wait_until="finalized",
     )
     print("STUDIO_PHASE: OPEN_RECEIPT")
     assert tx_execution_succeeded(opened), "open_case execution failed"
     assert contract.case_count().call() == 1
+    if os.environ.get("CONSENSUSGUARD_PHASE1_ONLY") == "1":
+        print("STUDIO_PHASE: PHASE1_OPEN_CASE_PASS", flush=True)
+        return
 
     case_id = 0
     resolved = contract.resolve(args=[case_id]).transact(
