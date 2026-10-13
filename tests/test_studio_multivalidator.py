@@ -68,7 +68,9 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     # can delay release of the claimed transaction after ACCEPTED.
     # Subsequent resolve tests still use full mocks (only in phase two).
     phase1_context = (
-        {"genvm_datetime": transaction_context["genvm_datetime"]}
+        transaction_context
+        if os.environ.get("CONSENSUSGUARD_PHASE1_VIRTUAL") == "1"
+        else {"genvm_datetime": transaction_context["genvm_datetime"]}
         if os.environ.get("CONSENSUSGUARD_PHASE1_ONLY") == "1"
         else transaction_context
     )
@@ -83,10 +85,18 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     # or receipts in CI logs. Each wait is inspected before and after polling.
     original_wait = local_client.wait_for_transaction_receipt
     def _safe_status(tx_hash):
+        # The legacy SDK decode may omit these fields on v0.123; query
+        # the stable RPC status endpoint. Never log receipt or calldata.
         try:
-            tx = local_client.get_transaction(transaction_hash=tx_hash)
-            value = tx.get("status_name", tx.get("status", "UNKNOWN"))
-            return str(getattr(value, "value", value))
+            response = local_client.provider.make_request(
+                "gen_getTransactionStatus", [tx_hash]
+            )
+            value = response.get("result")
+            return value if value in {
+                "PENDING", "ACTIVATED", "PROPOSING", "COMMITTING", "REVEALING",
+                "ACCEPTED", "FINALIZED", "CANCELED", "UNDETERMINED",
+                "LEADER_TIMEOUT", "VALIDATORS_TIMEOUT"
+            } else "UNRECOGNIZED"
         except Exception as exc:
             return "RPC_READ_FAILED_" + type(exc).__name__
     def _audited_wait(*args, **kwargs):
@@ -140,6 +150,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         consensus_max_rotations=3,
         fees=fees,
         wait_until="finalized",
+        wait_retries=90,
     )
 
     print("STUDIO_PHASE: DEPLOY_FINALIZED", flush=True)
