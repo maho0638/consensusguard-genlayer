@@ -1,7 +1,7 @@
 name: ConsensusGuard independent five-validator Studio CI audit
 on:
   push:
-    branches: [audit/studio-123-5validator-20261013]
+    branches: [audit/phase1-virtual-root-20261014]
     paths:
       - '.github/workflows/studio-audit.yml'
       - '.ci/studio-v123-compose.yml'
@@ -71,6 +71,7 @@ jobs:
           set -uo pipefail
           export CONSENSUSGUARD_RUN_STUDIO=1
           export CONSENSUSGUARD_PHASE1_ONLY=1
+          export CONSENSUSGUARD_PHASE1_VIRTUAL=1
           set +e
           gltest tests/test_studio_multivalidator.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
           status=$?
