@@ -19,8 +19,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-URL_A = "https://evidence-a.example/report.txt"
-URL_B = "https://evidence-b.example/report.txt"
+URL_A = "https://evidence-a.example.com/report.txt"
+URL_B = "https://evidence-b.example.com/report.txt"
+# GenVM validates TLDs BEFORE consulting mock_web_response; .example is
+# rejected as TLD_FORBIDDEN. .com domains work with these exact mocked URLs.
 BODY_A = "The signed release manifest states version 4.2 was published on 2026-10-10."
 BODY_B = "The official changelog lists version 4.2 with release date 2026-10-10."
 
