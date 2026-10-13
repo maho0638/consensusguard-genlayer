@@ -94,6 +94,25 @@ jobs:
                    'address already in use','connection refused','fatal','timeout','panic']
           print('SERVICE_LOG_LENGTH:',len(s))
           print('SERVICE_ERROR_MARKERS:',[m for m in markers if m in s])
+          # Startup-only errors and exceptions: never print user/mock transaction bodies.
+          import re
+          original=Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines()
+          visible=[]
+          for line in original:
+              lower=line.lower()
+              if ('transaction' in lower or 'private_key' in lower or
+                  'node_config' in lower or 'mock_' in lower or 'openai' in lower):
+                  continue
+              if not any(word in lower for word in
+                         ('error','traceback','exception','failed','config','genvm',
+                          'precompil','missing','abort','fatal','process','exit','signal',
+                          'unable','cannot','no such')):
+                  continue
+              line=re.sub(r'0x[0-9a-fA-F]{40,}', '[REDACTED_HEX]',line)
+              line=re.sub(r'(?i)(password|apikey|token|secret)[=: ]+[^\\s,}]+', r'\\1=[REDACTED]',line)
+              visible.append(line[:380])
+          for line in visible[-42:]:
+              print('SERVICE_SAFE_DIAGNOSTIC:',line)
           PY
       - name: Stop and remove ONLY disposable audit containers (preserve nothing)
         if: always()
