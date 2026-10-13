@@ -71,6 +71,9 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     assert rpc_chain_id == sdk_chain_id, (
         f"RPC/SDK network IDs mismatch: RPC={rpc_chain_id}, SDK={sdk_chain_id}"
     )
+    validator_total = int(local_client.provider.make_request("sim_countValidators", [])["result"])
+    print("LOCAL_STUDIO_VALIDATOR_COUNT:", validator_total)
+    assert validator_total == 5, f"Expected exactly five initialized validators, got {validator_total}"
     quote = local_client.estimate_transaction_fees({
         "leaderTimeunitsAllocation": 100,
         "validatorTimeunitsAllocation": 200,
