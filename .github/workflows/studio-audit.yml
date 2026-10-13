@@ -148,6 +148,35 @@ jobs:
                           'NotEnoughValidators','FailedToExecute','OutOfMemory','ValidationError')
               if m.lower() in s
           ])
+          # Only summarize Python exception categories from VM_ERROR stderr.
+          # Keep the original execution payload and receipts private.
+          import json
+          from collections import Counter
+          errors=Counter()
+          for raw in Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines():
+              if 'VM_ERROR' not in raw or '"stderr"' not in raw:
+                  continue
+              match=re.search(r'"stderr"\s*:\s*("(?:\\.|[^"\\])*")',raw)
+              if not match:
+                  continue
+              try:
+                  err=json.loads(match.group(1))
+              except (json.JSONDecodeError, ValueError):
+                  continue
+              types=re.findall(r'(?m)^(?:[a-zA-Z_][\w.]*\.)?([A-Za-z_]*(?:Error|Exception)):',err)
+              if types:
+                  errors[types[-1]]+=1
+              else:
+                  errors['UNKNOWN_TRACEBACK' if 'Traceback' in err else 'NO_TRACEBACK']+=1
+              # Never log error bodies or filenames; only code-level exception
+              # class and coarse error vocabulary.
+              for term in ('isinstance', 'object', 'bytes', 'str', 'get',
+                           'decode', 'json', 'prompt', 'dict', 'list', 'return',
+                           'not', 'callable', 'none', 'missing', 'args',
+                           'http', 'parse', 'method', 'attribute'):
+                  if term in err.lower():
+                      errors['TOKEN_'+term.upper()]+=1
+          print('GENVM_SANITIZED_EXCEPTION_COUNTS:',dict(errors))
           # Startup-only errors and exceptions: never print user/mock transaction bodies.
           import re
           original=Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines()
