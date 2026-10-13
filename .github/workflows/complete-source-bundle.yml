@@ -74,4 +74,5 @@ jobs:
           name: ConsensusGuard_FULL_SOURCE_970a763_67tests
           path: package/
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
