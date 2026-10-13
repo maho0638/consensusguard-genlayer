@@ -71,7 +71,8 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     def _safe_status(tx_hash):
         try:
             tx = local_client.get_transaction(transaction_hash=tx_hash)
-            return str(tx.get("status_name", tx.get("status", "UNKNOWN")))
+            value = tx.get("status_name", tx.get("status", "UNKNOWN"))
+            return str(getattr(value, "value", value))
         except Exception as exc:
             return "RPC_READ_FAILED_" + type(exc).__name__
     def _audited_wait(*args, **kwargs):
