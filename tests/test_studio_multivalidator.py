@@ -61,6 +61,20 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         "genvm_datetime": "2026-10-12T12:00:00Z",
     }
 
+    # The phase-one deploy/open_case path performs deterministic state updates:
+    # use the five persistent Studio validators rather than creating five
+    # transaction-scoped virtual validators. Virtual validators force an LLM
+    # module stop/start on entering AND leaving temporal_snapshot(), which
+    # can delay release of the claimed transaction after ACCEPTED.
+    # Subsequent resolve tests still use full mocks (only in phase two).
+    phase1_context = (
+        {"genvm_datetime": transaction_context["genvm_datetime"]}
+        if os.environ.get("CONSENSUSGUARD_PHASE1_ONLY") == "1"
+        else transaction_context
+    )
+    print("STUDIO_PHASE: PERSISTENT_FIVE_VALIDATORS" if phase1_context is not transaction_context
+          else "STUDIO_PHASE: MOCK_FIVE_VALIDATORS", flush=True)
+
     # v0.123 Studio requires a valid fee distribution even on disposable localnet.
     # Use the official SDK fee quote rather than changing the production contract.
     local_client = get_gl_client()
@@ -122,7 +136,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     factory = get_contract_factory(contract_file_path=contract_path)
     print("STUDIO_PHASE: DEPLOY_START")
     contract = factory.deploy(
-        transaction_context=transaction_context,
+        transaction_context=phase1_context,
         consensus_max_rotations=3,
         fees=fees,
         wait_until="finalized",
@@ -139,7 +153,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
             2,
         ]
     ).transact(
-        transaction_context=transaction_context,
+        transaction_context=phase1_context,
         consensus_max_rotations=3,
         fees=fees,
         wait_until="finalized",
