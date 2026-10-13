@@ -1,6 +1,6 @@
 # ConsensusGuard local Studio phase-1 diagnostic
 
-GitHub Actions run: 38470411424
+GitHub Actions run: 38474767527
 Test scope: deployment and open_case ONLY; no resolve or appeal.
 No validator configs, secrets or raw receipts are included.
 
@@ -8,12 +8,12 @@ No validator configs, secrets or raw receipts are included.
 - PHASE: VALIDATORS_READY
 - PHASE: FEES_QUOTED
 - PHASE: DEPLOY_START
-- WAIT_START: 0x10c95466af1bd394dc92cb08d787704c785bb9aee35abe1dcec723c711fbaf96 status=UNKNOWN finalized
-- WAIT_DONE: 0x10c95466af1bd394dc92cb08d787704c785bb9aee35abe1dcec723c711fbaf96 status=UNKNOWN 
+- WAIT_START: 0x5b8a1d8ee3fa9d7299f01a8c12748188d4b9dc0fbc63182f698fe45a23b1fe06 status=UNKNOWN finalized
+- WAIT_DONE: 0x5b8a1d8ee3fa9d7299f01a8c12748188d4b9dc0fbc63182f698fe45a23b1fe06 status=UNKNOWN 
 - PHASE: DEPLOY_FINALIZED
 - PHASE: DEPLOY_DONE
-- WAIT_START: 0x49bde0d2335850e94f7b555a13c0b0340c314f121eff55d10a32c462e9fee0fa status=UNKNOWN finalized
-- WAIT_DONE: 0x49bde0d2335850e94f7b555a13c0b0340c314f121eff55d10a32c462e9fee0fa status=UNKNOWN 
+- WAIT_START: 0x9a1b3dbfa3aaff152c1ed8f9f99b8881ae384ac1e65e4c00f468df1a77f10a1b status=UNKNOWN finalized
+- WAIT_DONE: 0x9a1b3dbfa3aaff152c1ed8f9f99b8881ae384ac1e65e4c00f468df1a77f10a1b status=UNKNOWN 
 - PHASE: OPEN_RECEIPT
 - PHASE: PHASE1_OPEN_CASE_PASS
 
