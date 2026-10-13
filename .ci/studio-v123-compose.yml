@@ -18,7 +18,7 @@ x-runtime: &runtime
   GENVM_BIN: /genvm/bin
   RPCPORT: "4000"
   JSONRPC_SERVER_URL: "http://jsonrpc:4000"
-  GENLAYER_CHAIN_ID: "61127"
+  GENLAYER_CHAIN_ID: "61999"
   DEFAULT_NUM_INITIAL_VALIDATORS: "5"
   DEFAULT_CONSENSUS_MAX_ROTATIONS: "3"
   VITE_FINALITY_WINDOW: "30"
@@ -77,7 +77,7 @@ services:
       <<: *runtime
       WEB_CONCURRENCY: "1"
       VITE_GENLAYER_NETWORK: localnet
-      VITE_CHAIN_ID: "61127"
+      VITE_CHAIN_ID: "61999"
       VITE_IS_HOSTED: "false"
     depends_on:
       database-migration:
