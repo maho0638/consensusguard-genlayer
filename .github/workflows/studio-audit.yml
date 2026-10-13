@@ -70,6 +70,7 @@ jobs:
         run: |
           set -uo pipefail
           export CONSENSUSGUARD_RUN_STUDIO=1
+          export CONSENSUSGUARD_PHASE1_ONLY=1
           set +e
           gltest tests/test_studio_multivalidator.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
           status=$?
@@ -86,6 +87,10 @@ jobs:
               if 'STUDIO_PHASE:' in line or 'LOCAL_STUDIO_VALIDATOR_COUNT:' in line:
                   sanitized = line.split('STUDIO_PHASE:')[-1] if 'STUDIO_PHASE:' in line else line.split('LOCAL_STUDIO_VALIDATOR_COUNT:')[-1]
                   print('STUDIO_SAFE_PHASE:',sanitized[:85])
+          for line in s.splitlines():
+              if line.startswith('STUDIO_SAFE_WAIT_START:') or line.startswith('STUDIO_SAFE_WAIT_DONE:') or line.startswith('STUDIO_SAFE_WAIT_FAILURE:'):
+                  # Instrumentation prints only tx hash, status, wait target and exception class.
+                  print(line[:300])
           # The failure's top-level exception class (no traceback or receipts).
           safe_names=['TimeoutError','TransactionTimeoutError','TransactionError','DeploymentError','AssertionError','TransactionNotFound']
           print('STUDIO_EXCEPTION_CLASS_MARKERS:',[name for name in safe_names if name in s])
