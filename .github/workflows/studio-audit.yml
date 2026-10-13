@@ -270,7 +270,7 @@ jobs:
             echo "No new audit diagnostics"; exit 0
           fi
           git commit -m "evidence(audit): capture sanitized phase-one transaction statuses"
-          git push origin HEAD:audit/studio-123-5validator-20261013
+          git push origin HEAD:audit/phase1-virtual-root-20261014
       - name: Stop and remove ONLY disposable audit containers (preserve nothing)
         if: always()
         run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
