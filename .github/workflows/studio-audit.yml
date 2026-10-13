@@ -204,6 +204,9 @@ jobs:
             'worker_task_failed': r'Task failed',
             'worker_recovery': r'Recovered [0-9]+ stuck transactions',
             'worker_started': r'Starting consensus worker',
+            'transaction_processed': r'Successfully processed transaction',
+            'temporary_validator_configured': r'Configuring validator',
+            'contract_deployed': r'Contract deployed',
           }
           result=[]
           for key, pattern in categories.items():
