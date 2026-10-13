@@ -169,6 +169,18 @@ jobs:
                   errors[types[-1]]+=1
               else:
                   errors['UNKNOWN_TRACEBACK' if 'Traceback' in err else 'NO_TRACEBACK']+=1
+              # Exception cause identifiers are standard code tokens, not
+              # exception message bodies. Reject anything outside token syntax.
+              for tail in err.splitlines()[-4:]:
+                  if 'NondetException:' in tail:
+                      reason=tail.partition('NondetException:')[2]
+                      for token in re.findall(r'\b[A-Z][A-Z0-9_]{3,59}\b',reason):
+                          errors['NONDET_CAUSE_'+token]+=1
+              frames=re.findall(r'File "([^"]+)", line \d+, in ([A-Za-z_]\w*)',err)
+              for filename, func in frames[-6:]:
+                  leaf=filename.rsplit('/',1)[-1]
+                  if re.fullmatch(r'[A-Za-z0-9_.-]{1,70}',leaf):
+                      errors['FRAME_'+leaf.upper().replace('.','_')]+=1
               # Never log error bodies or filenames; only code-level exception
               # class and coarse error vocabulary.
               for term in ('isinstance', 'object', 'bytes', 'str', 'get',
