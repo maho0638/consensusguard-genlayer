@@ -94,7 +94,10 @@ jobs:
                   print(line[:300])
           for line in s.splitlines():
               if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
-                                   "STUDIO_RESOLVE_SAFE_CASE_STATE:")):
+                                   "STUDIO_RESOLVE_SAFE_CASE_STATE:",
+                                   "STUDIO_RESOLVE_VM_KIND:",
+                                   "STUDIO_RESOLVE_VM_ERROR_COUNT:",
+                                   "STUDIO_RESOLVE_VM_ERROR:")):
                   print(line[:300])
           # The failure's top-level exception class (no traceback or receipts).
           safe_names=['TimeoutError','TransactionTimeoutError','TransactionError','DeploymentError','AssertionError','TransactionNotFound']
@@ -258,7 +261,10 @@ jobs:
           output.extend(['', '## Resolve outcome (restricted enum and marker fields)'])
           for line in lines:
               if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
-                                  "STUDIO_RESOLVE_SAFE_CASE_STATE:")):
+                                  "STUDIO_RESOLVE_SAFE_CASE_STATE:",
+                                   "STUDIO_RESOLVE_VM_KIND:",
+                                   "STUDIO_RESOLVE_VM_ERROR_COUNT:",
+                                   "STUDIO_RESOLVE_VM_ERROR:")):
                   output.append('- ' + line[:300])
           dbpath=Path('/tmp/cg-safe-tx-status.txt')
           output.extend(['','## Local transaction state summaries'])
