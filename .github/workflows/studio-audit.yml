@@ -83,6 +83,13 @@ jobs:
           print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b1 passed\b',s) else 'CHECK_EXIT_CODE')
           print('STUDIO_TEST_LOG_LENGTH:', len(s))
           for line in s.splitlines():
+              if 'STUDIO_PHASE:' in line or 'LOCAL_STUDIO_VALIDATOR_COUNT:' in line:
+                  sanitized = line.split('STUDIO_PHASE:')[-1] if 'STUDIO_PHASE:' in line else line.split('LOCAL_STUDIO_VALIDATOR_COUNT:')[-1]
+                  print('STUDIO_SAFE_PHASE:',sanitized[:85])
+          # The failure's top-level exception class (no traceback or receipts).
+          safe_names=['TimeoutError','TransactionTimeoutError','TransactionError','DeploymentError','AssertionError','TransactionNotFound']
+          print('STUDIO_EXCEPTION_CLASS_MARKERS:',[name for name in safe_names if name in s])
+          for line in s.splitlines():
               if 'STUDIO_RPC_CHAIN_ID:' in line and 'SDK_CLIENT_CHAIN_ID:' in line:
                   print('STUDIO_SAFE_CHAIN_IDS:',line[-180:])
           print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
@@ -123,6 +130,11 @@ jobs:
                    'address already in use','connection refused','fatal','timeout','panic']
           print('SERVICE_LOG_LENGTH:',len(s))
           print('SERVICE_ERROR_MARKERS:',[m for m in markers if m in s])
+          print('SERVICE_WORKER_ERROR_CLASSES:',[
+              m for m in ('WorkerNotRunning','NoValidators','MissingValidators','TimeOut','TimeoutError',
+                          'NotEnoughValidators','FailedToExecute','OutOfMemory','ValidationError')
+              if m.lower() in s
+          ])
           # Startup-only errors and exceptions: never print user/mock transaction bodies.
           import re
           original=Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines()
