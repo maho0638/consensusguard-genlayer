@@ -36,7 +36,7 @@ def _manifest():
 
 def test_studio_five_mock_validators_finalize_matching_evidence():
     """Five Studio validators independently re-fetch and re-classify inputs."""
-    from gltest import get_contract_factory, get_validator_factory
+    from gltest import get_contract_factory, get_validator_factory, get_gl_client
     from gltest.assertions import tx_execution_succeeded
 
     llm_response = {
@@ -61,11 +61,25 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         "genvm_datetime": "2026-10-12T12:00:00Z",
     }
 
+    # v0.123 Studio requires a valid fee distribution even on disposable localnet.
+    # Use the official SDK fee quote rather than changing the production contract.
+    quote = get_gl_client().estimate_transaction_fees({
+        "leaderTimeunitsAllocation": 100,
+        "validatorTimeunitsAllocation": 200,
+        "executionBudgetPerRound": 1_000_000_000_000_000,
+        "totalMessageFees": 0,
+        "appealRounds": 0,
+        "rotations": [3],
+    })
+    assert isinstance(quote, dict) and "distribution" in quote and "feeValue" in quote
+    fees = {"distribution": quote["distribution"], "feeValue": quote["feeValue"]}
+
     contract_path = Path(__file__).resolve().parents[1] / "contracts" / "consensus_guard.py"
     factory = get_contract_factory(contract_file_path=contract_path)
     contract = factory.deploy(
         transaction_context=transaction_context,
         consensus_max_rotations=3,
+        fees=fees,
     )
 
     opened = contract.open_case(
@@ -79,6 +93,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     ).transact(
         transaction_context=transaction_context,
         consensus_max_rotations=3,
+        fees=fees,
     )
     assert tx_execution_succeeded(opened), opened
     assert contract.case_count().call() == 1
@@ -87,6 +102,7 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     resolved = contract.resolve(args=[case_id]).transact(
         transaction_context=transaction_context,
         consensus_max_rotations=3,
+        fees=fees,
     )
     assert tx_execution_succeeded(resolved), resolved
 
