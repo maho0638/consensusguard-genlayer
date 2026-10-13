@@ -151,6 +151,7 @@ jobs:
           # Only summarize Python exception categories from VM_ERROR stderr.
           # Keep the original execution payload and receipts private.
           import json
+          import re
           from collections import Counter
           errors=Counter()
           for raw in Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines():
