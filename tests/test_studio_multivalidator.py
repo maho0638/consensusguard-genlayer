@@ -63,7 +63,15 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
 
     # v0.123 Studio requires a valid fee distribution even on disposable localnet.
     # Use the official SDK fee quote rather than changing the production contract.
-    quote = get_gl_client().estimate_transaction_fees({
+    local_client = get_gl_client()
+    rpc_chain_response = local_client.provider.make_request("eth_chainId", [])
+    rpc_chain_id = int(rpc_chain_response["result"], 16)
+    sdk_chain_id = int(local_client.chain.id)
+    print("STUDIO_RPC_CHAIN_ID:", rpc_chain_id, "SDK_CLIENT_CHAIN_ID:", sdk_chain_id)
+    assert rpc_chain_id == sdk_chain_id, (
+        f"RPC/SDK network IDs mismatch: RPC={rpc_chain_id}, SDK={sdk_chain_id}"
+    )
+    quote = local_client.estimate_transaction_fees({
         "leaderTimeunitsAllocation": 100,
         "validatorTimeunitsAllocation": 200,
         "executionBudgetPerRound": 1_000_000_000_000_000,
