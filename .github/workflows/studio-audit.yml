@@ -82,6 +82,9 @@ jobs:
                    'error code','timeout','deploymenterror','transactionerror','executionerror']
           print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b1 passed\b',s) else 'CHECK_EXIT_CODE')
           print('STUDIO_TEST_LOG_LENGTH:', len(s))
+          for line in s.splitlines():
+              if 'STUDIO_RPC_CHAIN_ID:' in line and 'SDK_CLIENT_CHAIN_ID:' in line:
+                  print('STUDIO_SAFE_CHAIN_IDS:',line[-180:])
           print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
           # Safe exception detail: print error *kind* and a short message only,
           # never raw receipts, validator configs or embedded private keys.
