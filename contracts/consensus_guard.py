@@ -452,7 +452,12 @@ class ConsensusGuard(gl.contract.Contract):
             # consensus, preserving retry behavior.
             if len(verified_sources) >= minimum:
                 prompt = _classification_prompt(claim_text, criteria_text, verified_sources)
-                raw = gl.nondet.exec_prompt(prompt, response_format="json")
+                # Request text rather than GenVM's internal JSON decoder. We must
+                # validate the returned JSON ourselves via strict_json_loads,
+                # rejecting duplicate keys and unexpected schema/labels. This
+                # prevents a module-level JSON decode error from bypassing the
+                # contract's explicit deterministic classification checks.
+                raw = gl.nondet.exec_prompt(prompt, response_format="text")
                 if isinstance(raw, str):
                     try:
                         labels_data = strict_json_loads(raw)
