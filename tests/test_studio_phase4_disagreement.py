@@ -216,11 +216,11 @@ def test_studio_disagreement_rollback_and_recovery():
         return original_audited_wait(*args, **kwargs)
 
     local_client.wait_for_transaction_receipt = _track_wait
+
     print("PHASE4_DISAGREEMENT_START", flush=True)
+    dissent_receipt = None
     try:
-        # An UNDETERMINED transaction cannot normally satisfy a FINALIZED
-        # waiter, hence the independent RPC status poll below.
-        contract.resolve(args=[0]).transact(
+        dissent_receipt = contract.resolve(args=[0]).transact(
             transaction_context=phase1_context,
             consensus_max_rotations=3,
             fees=fees,
@@ -235,29 +235,48 @@ def test_studio_disagreement_rollback_and_recovery():
     assert tx_hash.startswith("0x") and len(tx_hash) == 66
     print("PHASE4_DISAGREEMENT_TX:", tx_hash, flush=True)
 
-    status = "UNKNOWN"
-    tx = {}
-    for attempt in range(90):
-        tx = local_client.get_transaction(transaction_hash=tx_hash)
-        value = tx.get("status_name", tx.get("status", "UNKNOWN"))
-        status = str(getattr(value, "value", value)).upper()
-        if status in ("UNDETERMINED", "FINALIZED", "CANCELED", "VALIDATORS_TIMEOUT", "LEADER_TIMEOUT"):
-            break
-        time.sleep(5)
-    print("PHASE4_FINAL_STATUS:", status, flush=True)
+    # The SDK's get_transaction() can omit receipt/status fields; do not
+    # misclassify that as UNKNOWN after a successful finalized waiter.
+    # The transact() return value IS the consensus receipt when available.
+    tx = dissent_receipt if isinstance(dissent_receipt, dict) else {}
+    print("PHASE4_RECEIPT_KEYS:", ",".join(sorted(
+        k for k in tx if isinstance(k, str) and k.isidentifier()
+    )), flush=True)
+    raw_status = tx.get("status_name", tx.get("status", "UNKNOWN"))
+    status = str(getattr(raw_status, "value", raw_status)).upper()
+    consensus = tx.get("consensus_data", {}) or {}
+    votes = consensus.get("votes", {}) or {}
+    counts = Counter(str(v).lower() for v in votes.values()) if isinstance(votes, dict) else Counter()
+    print("PHASE4_RECEIPT_STATUS:", status, flush=True)
+    print("PHASE4_CONSENSUS_KEYS:", ",".join(sorted(
+        k for k in consensus.keys() if isinstance(k, str) and k.isidentifier()
+    )), flush=True)
+    print("PHASE4_VOTES: agree=" + str(counts["agree"]) +
+          " disagree=" + str(counts["disagree"]) +
+          " idle=" + str(counts["idle"]) +
+          " other=" + str(sum(n for k,n in counts.items() if k not in ("agree","disagree","idle"))),
+          flush=True)
+    current_case = json.loads(contract.get_case(args=[0]).call())
+    current_decisions = int(contract.decision_count().call())
+    print("PHASE4_CHAIN_STATE: state=" + current_case["state"] +
+          " decisions=" + str(current_decisions), flush=True)
+    if status == "UNKNOWN":
+        # Explicitly request the protocol status, never default to UNKNOWN
+        # and claim a rollback based solely on a missing field.
+        try:
+            status_rpc = local_client.provider.make_request(
+                "gen_getTransactionStatus", [{"txId": tx_hash}]
+            )
+            data = status_rpc.get("result")
+            if isinstance(data, dict):
+                status = str(data.get("status", "UNKNOWN")).upper()
+            print("PHASE4_RPC_STATUS:", status, flush=True)
+        except Exception as exc:
+            print("PHASE4_RPC_EXCEPTION_CLASS:", type(exc).__name__, flush=True)
     assert status == "UNDETERMINED", (
         "Persistent dissent must reach explicit UNDETERMINED; never "
         "pass on timeout, pending, acceptance, finalization or errors."
     )
-    consensus = tx.get("consensus_data", {}) or {}
-    votes = consensus.get("votes", {}) or {}
-    print("PHASE4_CONSENSUS_KEYS:", ",".join(sorted(
-        k for k in consensus.keys() if isinstance(k, str) and k.isidentifier()
-    )), flush=True)
-    counts = Counter(str(v).lower() for v in votes.values()) if isinstance(votes, dict) else Counter()
-    print("PHASE4_VOTES: agree=" + str(counts["agree"]) +
-          " disagree=" + str(counts["disagree"]) +
-          " idle=" + str(counts["idle"]), flush=True)
     assert isinstance(votes, dict) and len(votes) == 5
     assert {str(a).lower() for a in votes} == address_set
     assert counts["disagree"] >= 1, "No independent disagreement evidence"
