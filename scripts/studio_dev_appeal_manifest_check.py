@@ -83,6 +83,30 @@ try:
 except Exception as exc:
     report.append("- Studio Dev deployed code fetch unavailable: "+type(exc).__name__)
 
+# The Studio Explorer address endpoint uses separate SQL state/transaction
+# read paths and returns the deployed plain-text contract code.
+try:
+    eurl="https://studio-dev.genlayer.com/api/explorer/address/"+CONTRACT
+    req=urllib.request.Request(eurl,headers={"Accept":"application/json","User-Agent":"ConsensusGuard-Code-Provenance-Readonly"})
+    with urllib.request.urlopen(req,timeout=17) as r: obj=json.loads(r.read(1_000_000))
+    code=obj.get("contract_code") if isinstance(obj,dict) else None
+    if isinstance(code,str):
+        decoded=code.encode("utf-8")
+        local=Path("contracts/consensus_guard.py").read_bytes()
+        match=decoded==local
+        report.extend([
+            "- Explorer direct deployed source accessible: YES",
+            f"- Explorer deployed source SHA-256: \`{sha(decoded)}\`",
+            f"- Current audited source SHA-256: \`{sha(local)}\`",
+            "- Deployed source exactly equals latest local audit: **"+str(match)+"**",
+            f"- Explorer deployed source bytes: {len(decoded)}; local bytes: {len(local)}",
+        ])
+        print("EXPLORER_DEPLOYED_SOURCE_EXACT_MATCH:",match,flush=True)
+    else:
+        report.append("- Explorer direct deployed source unavailable in returned detail object")
+except Exception as exc:
+    report.append("- Explorer deployed source alternative failed: "+type(exc).__name__)
+
 report+=["","## Signer and network boundary",
 "1. The smart contract is requester-only and *only* the account that opened case 0 can sign a valid \`appeal\`.",
 "2. The Studio Dev read RPC currently returns SQLAlchemy pending-rollback errors.",
