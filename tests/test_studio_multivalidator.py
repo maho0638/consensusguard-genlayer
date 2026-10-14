@@ -274,18 +274,24 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         print("STUDIO_RESOLVE_SAFE_CASE_STATE_ERROR: " +
               type(exc).__name__, flush=True)
     assert tx_execution_succeeded(resolved), "resolve consensus execution failed"
-    # The leader is recorded separately. Require independent votes from each
-    # of the four other Studio validators, not merely five configured nodes.
+    # Studio v0.123 consensus_data.votes contains ALL five votes:
+    # leader + four independently executing validators. Only the four
+    # follower execution receipts live in consensus_data.validators.
     consensus = resolved.get("consensus_data", {}) or {}
     observed_votes = consensus.get("votes", {}) or {}
     independent_receipts = consensus.get("validators", []) or []
     assert isinstance(observed_votes, dict), "Missing consensus voting map"
-    assert len(observed_votes) == 4, "All four non-leader validators must vote"
-    assert len(independent_receipts) == 4, "Four validator receipts required"
+    assert len(observed_votes) == 5, "Leader plus four validator votes are required"
+    assert len(independent_receipts) == 4, "Four independent validator receipts required"
     assert all(str(v).lower() == "agree" for v in observed_votes.values()), (
-        "Unanimous five-validator participation was not demonstrated"
+        "Unanimous five-validator consensus was not demonstrated"
     )
-    print("STUDIO_PHASE: FOUR_INDEPENDENT_AGREE_VOTES", flush=True)
+    # Prevent counting a duplicate voter or an unconfigured identity.
+    expected_addresses = {v.lower() for v in configured_addresses}
+    assert {str(addr).lower() for addr in observed_votes} == expected_addresses, (
+        "Consensus votes do not match all five configured validators"
+    )
+    print("STUDIO_PHASE: FIVE_UNANIMOUS_AGREE_VOTES", flush=True)
 
     case = json.loads(contract.get_case(args=[case_id]).call())
     decision = json.loads(contract.get_latest_decision(args=[case_id]).call())
