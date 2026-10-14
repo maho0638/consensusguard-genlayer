@@ -13,13 +13,14 @@ from genlayer_py.abi.transactions import serialize
 from genlayer_py.contracts.utils import make_calldata_object
 
 RPC = "https://studio-dev.genlayer.com/api"
+RPC_PROXY = "https://explorer-studio-dev.genlayer.com/api/rpc"
 CONTRACT="0xBa84783D71d902c8BD3Ba63418Df172280249139"
 HISTORIC="0x26812cb24903f30c20dd07dc9de515d911eee98248eeed0c376175c36797a4b9"
 data=serialize([encode(make_calldata_object(method="get_case", args=[0])),b"\x00"])
 
-def request(method,args):
+def request(method,args,endpoint=RPC):
     body=json.dumps({"jsonrpc":"2.0","id":1,"method":method,"params":args}).encode()
-    req=urllib.request.Request(RPC,data=body,headers={"Content-Type":"application/json","User-Agent":"CG-Readonly-Appeal-Diagnosis"})
+    req=urllib.request.Request(endpoint,data=body,headers={"Content-Type":"application/json","User-Agent":"CG-Readonly-Appeal-Diagnosis"})
     with urllib.request.urlopen(req,timeout=22) as r:return json.loads(r.read(1200000))
 
 tx=request("eth_getTransactionByHash",[HISTORIC]).get("result") or {}
@@ -32,15 +33,17 @@ cases=[
     ("gen_call_original_sender_status_finalized","gen_call",[{**params,"status":"finalized"}]),
     ("sim_call_original_sender_status_finalized","sim_call",[{**params,"status":"finalized"}]),
     ("eth_call_original_sender_finalized","eth_call",[{"from":sender,"to":CONTRACT,"data":data},"latest"]),
+    ("explorer_rpc_proxy_gen_call","gen_call",[{**params,"status":"finalized"}],RPC_PROXY),
+    ("explorer_rpc_proxy_sim_call","sim_call",[{**params,"status":"finalized"}],RPC_PROXY),
 ]
 report=["# Alternate GenLayer execution RPC — original requester address; read-only",
     "",f"CI https://github.com/maho0638/consensusguard-genlayer/actions/runs/{os.getenv('GITHUB_RUN_ID','unknown')}",
     "Original sender pulled from finalized transaction; no account identity or private key logged.",
     "All type=read operations, no chain writes.",
     ""]
-for label,method,args in cases:
+for label,method,args,*option in cases:
     try:
-        ret=request(method,args)
+        ret=request(method,args,*option)
         if "error" in ret:
             error=ret["error"]
             if isinstance(error,dict):
