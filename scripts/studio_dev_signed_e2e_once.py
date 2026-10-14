@@ -37,7 +37,7 @@ def is_tx_success(tx):
     result=str(tx.get("txExecutionResultName") or tx.get("tx_execution_result_name")
         or tx.get("result_name") or "").upper()
     bad=("ERROR","REVERT","FAILED","CANCEL","UNDERT")
-    return not any(x in result for x in bad)
+    return result in ("SUCCESS", "FINISHED_WITH_RETURN", "OK") and not any(x in result for x in bad)
 
 def receive(client, txid, what):
     if not isinstance(txid,str) or not txid.startswith("0x"):
@@ -138,23 +138,37 @@ def run():
     appealed_tx=client.write_contract(address=addr,function_name="appeal",args=[0,second],fees=fees,consensus_max_rotations=3)
     receive(client,appealed_tx,"appeal")
     log_msg("appeal write has finalized on real Studio Dev preview")
-    for method in ("get_case","get_decision","get_latest_decision"):
-        try:
-            read=client.read_contract(address=addr,function_name=method,args=[0])
-            if isinstance(read,str) and len(read)<50000:
-                obj=json.loads(read)
-                log_msg(method+" confirmed state="+str(obj.get("state","n/a"))+" round="+str(obj.get("round","n/a")))
-        except Exception as e:
-            log_msg(method+" readback unavailable: "+type(e).__name__)
-    log_msg("all four signed writes finalized; readback result must be inspected separately for full correctness")
+    # Full on-chain readback is mandatory; do NOT pass on finalized tx alone.
+    case=json.loads(client.read_contract(address=addr,function_name="get_case",args=[0]))
+    prior=json.loads(client.read_contract(address=addr,function_name="get_decision",args=[0]))
+    current=json.loads(client.read_contract(address=addr,function_name="get_decision",args=[1]))
+    latest=json.loads(client.read_contract(address=addr,function_name="get_latest_decision",args=[0]))
+    count=int(client.read_contract(address=addr,function_name="decision_count",args=[]))
+    if not (
+        case.get("state")=="APPEALED"
+        and case.get("appeal_used") is True
+        and int(case.get("latest_decision_id",-1))==1
+        and count==2
+        and int(prior.get("round",-1))==0
+        and int(current.get("round",-1))==1
+        and current==latest
+        and prior.get("manifest_sha256")!=current.get("manifest_sha256")
+    ):
+        raise RuntimeError("Studio Dev finalize did not prove fully correct append-only APPEALED readback")
+    log_msg("DEV_FULL_E2E_PASS: four signed writes plus state=APPEALED and two immutable decisions")
 
+import re
+failed=False
 try:
     run()
 except Exception as exc:
-    safe=type(exc).__name__+":"+str(exc)[:110]
+    failed=True
+    safe=type(exc).__name__+":"+re.sub(r"0x[0-9a-fA-F]{16,}","[hex redacted]",str(exc))[:110]
     print("DEV_E2E_STOP:",safe,flush=True)
     audit.append("- STOP before further writes: "+safe)
 finally:
     OUT.parent.mkdir(exist_ok=True,parents=True)
     OUT.write_text("\n".join(audit)+"\n",encoding="utf-8")
     print("DEV_E2E_REPORT",OUT,flush=True)
+if failed:
+    raise SystemExit(1)
