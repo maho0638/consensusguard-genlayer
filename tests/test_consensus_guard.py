@@ -432,6 +432,26 @@ def test_insufficient_verified_sources_on_appeal_skip_classifier_and_commit_inco
     assert contract.decision_count() == 2
 
 
+def test_text_mode_classifier_rejects_duplicate_json_keys_and_preserves_state(
+    direct_vm, direct_deploy
+):
+    # Text-mode LLM responses must still undergo strict JSON validation.
+    # Conflicting duplicate 'labels' values can never silently override
+    # a prior value or commit an ambiguous verdict.
+    direct_vm.mock_web(URL_A.replace(".", r"\\."), {"status": 200, "body": BODY_A.decode()})
+    direct_vm.mock_web(URL_B.replace(".", r"\\."), {"status": 200, "body": BODY_B.decode()})
+    direct_vm.mock_llm(
+        r"evidence classifier inside a smart contract",
+        '{"labels":["SUPPORTS","SUPPORTS"],"labels":["REFUTES","REFUTES"]}',
+    )
+    contract = direct_deploy("contracts/consensus_guard.py")
+    case_id = open_case(contract)
+    with direct_vm.expect_revert("classifier output contains duplicate JSON object keys"):
+        contract.resolve(case_id)
+    assert json.loads(contract.get_case(case_id))["state"] == "OPEN"
+    assert contract.decision_count() == 0
+
+
 def test_classifier_failure_on_sufficient_appeal_evidence_rolls_back_state(
     direct_vm, direct_deploy
 ):
