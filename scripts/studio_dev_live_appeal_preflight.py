@@ -31,11 +31,16 @@ def main():
         "Workflow: https://github.com/maho0638/consensusguard-genlayer/actions/runs/"+os.environ.get("GITHUB_RUN_ID","unknown"),
         "",
     ]
+    stage = "sdk-read_case"
     try:
         case = unwrap(client.read_contract(address=CONTRACT, function_name="get_case",args=[0],state_status="finalized"))
+        stage = "sdk-read_latest_decision"
         decision = unwrap(client.read_contract(address=CONTRACT,function_name="get_latest_decision",args=[0],state_status="finalized"))
+        stage = "sdk-read_case_count"
         case_count = client.read_contract(address=CONTRACT,function_name="case_count",args=[],state_status="finalized")
+        stage = "sdk-read_decision_count"
         decision_count = client.read_contract(address=CONTRACT,function_name="decision_count",args=[],state_status="finalized")
+        stage = "sdk-get_transaction"
         historic = client.get_transaction(hash=ORIGINAL_RESOLVE_TX)
         if not isinstance(historic,dict): historic={}
         original_sender = str(case.get("requester","")).lower()
@@ -71,9 +76,13 @@ def main():
                     "Cannot assume a transaction will be possible without resolving current state."]
             print("APPEAL_LIVE_STATE: OTHER_"+str(case.get("state")),flush=True)
     except Exception as exc:
+        import re
         msg = type(exc).__name__
+        diagnostic = re.sub(r"0x[0-9a-fA-F]{16,}", "[hex redacted]", str(exc))[:240]
         lines+=["## RPC and state read",f"- Failed: \`{msg}\`","- Studio Dev preview may have reset or network may restrict GenVM read calls.","- No transaction was sent."]
-        print("APPEAL_READ_ERROR_TYPE:",msg,flush=True)
+        lines.append("- Failed stage: `" + stage + "`")
+        lines.append("- SDK diagnostic (addresses redacted): `" + diagnostic + "`")
+        print("APPEAL_READ_ERROR_TYPE:",msg,"STAGE:",stage,"CAUSE:",diagnostic,flush=True)
     OUTPUT.parent.mkdir(exist_ok=True,parents=True)
     OUTPUT.write_text("\n".join(lines)+"\n",encoding="utf-8")
     print("APPEAL_READ_ONLY_REPORT:",OUTPUT,flush=True)
