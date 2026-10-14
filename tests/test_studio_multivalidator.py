@@ -37,7 +37,7 @@ def _manifest():
 
 
 def test_studio_five_mock_validators_finalize_matching_evidence():
-    """Five Studio validators independently re-fetch and re-classify inputs."""
+    """Five-validator Studio quorum: independently verify until decisive majority."""
     from gltest import get_contract_factory, get_validator_factory, get_gl_client
     from gltest.assertions import tx_execution_succeeded
 
@@ -274,24 +274,47 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         print("STUDIO_RESOLVE_SAFE_CASE_STATE_ERROR: " +
               type(exc).__name__, flush=True)
     assert tx_execution_succeeded(resolved), "resolve consensus execution failed"
-    # Studio v0.123 consensus_data.votes contains ALL five votes:
-    # leader + four independently executing validators. Only the four
-    # follower execution receipts live in consensus_data.validators.
+    # Studio v0.123 intentionally cancels unfinished validator tasks as soon
+    # as a mathematically decisive quorum is reached (CommittingState).
+    # Such validators receive synthetic IDLE receipts with error_code
+    # CONSENSUS_VALIDATOR_QUORUM_REACHED; they did not independently vote.
+    # Do not falsely demand unanimity or falsely count IDLE as agreement.
+    from collections import Counter
     consensus = resolved.get("consensus_data", {}) or {}
     observed_votes = consensus.get("votes", {}) or {}
     independent_receipts = consensus.get("validators", []) or []
     assert isinstance(observed_votes, dict), "Missing consensus voting map"
-    assert len(observed_votes) == 5, "Leader plus four validator votes are required"
-    assert len(independent_receipts) == 4, "Four independent validator receipts required"
-    assert all(str(v).lower() == "agree" for v in observed_votes.values()), (
-        "Unanimous five-validator consensus was not demonstrated"
-    )
-    # Prevent counting a duplicate voter or an unconfigured identity.
+    assert len(observed_votes) == 5, "Five eligible voter identities required"
+    assert len(independent_receipts) == 4, "Four follower receipt slots required"
     expected_addresses = {v.lower() for v in configured_addresses}
     assert {str(addr).lower() for addr in observed_votes} == expected_addresses, (
-        "Consensus votes do not match all five configured validators"
+        "Consensus voter identities do not match five configured validators"
     )
-    print("STUDIO_PHASE: FIVE_UNANIMOUS_AGREE_VOTES", flush=True)
+    counts = Counter(str(v).lower() for v in observed_votes.values())
+    print("STUDIO_SAFE_VOTE_COUNTS: agree=" + str(counts["agree"]) +
+          " idle=" + str(counts["idle"]) +
+          " unexpected=" + str(sum(n for k, n in counts.items()
+                                  if k not in ("agree", "idle"))), flush=True)
+    assert set(counts).issubset({"agree", "idle"}), (
+        "Validator disagreement/timeout is not a successful unanimous-mock quorum"
+    )
+    assert counts["agree"] >= 3, "Five-validator majority requires at least three agree votes"
+    assert counts["agree"] + counts["idle"] == 5
+    idle_receipts = [
+        receipt for receipt in independent_receipts
+        if isinstance(receipt, dict) and
+        str(receipt.get("vote", "")).lower() == "idle"
+    ]
+    assert len(idle_receipts) == counts["idle"], (
+        "Missing synthetic idle receipts for early quorum cancellations"
+    )
+    assert all(
+        isinstance(receipt.get("genvm_result"), dict) and
+        receipt["genvm_result"].get("error_code") ==
+            "CONSENSUS_VALIDATOR_QUORUM_REACHED"
+        for receipt in idle_receipts
+    ), "IDLE must be proven to result from early quorum, not infrastructure failure"
+    print("STUDIO_PHASE: FIVE_VALIDATOR_QUORUM_VERIFIED", flush=True)
 
     case = json.loads(contract.get_case(args=[case_id]).call())
     decision = json.loads(contract.get_latest_decision(args=[case_id]).call())
