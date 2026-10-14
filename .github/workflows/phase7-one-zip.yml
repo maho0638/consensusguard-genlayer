@@ -1,0 +1,106 @@
+name: ConsensusGuard phase-seven FINAL ONE ZIP with full SHA256 verification
+
+on:
+  push:
+    branches: [audit/phase7-final-delivery-20261014]
+    paths:
+      - '.github/workflows/phase7-one-zip.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-handoff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GENVM_PREBUILT_DIR: ${{ github.workspace }}/vendor
+      CONSENSUSGUARD_GENVM_CACHE: ${{ runner.temp }}/phase7-genvm-cache
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout the exact complete audit branch with verified ancestry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.12.14
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12.14"
+
+      - name: Install frozen toolchain and run full phase-seven tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cg-phase7-qa
+          python -m pip install --disable-pip-version-check -r requirements-lock.txt
+          python -m pip check 2>&1 | tee /tmp/cg-phase7-qa/pip_check.log
+          python scripts/verify_toolchain_bundles.py 2>&1 | tee /tmp/cg-phase7-qa/bundle_verify.log
+          python -m compileall -q contracts tests scripts 2>&1 | tee /tmp/cg-phase7-qa/compileall.log
+          genvm-lint lint contracts/consensus_guard.py --json 2>&1 | tee /tmp/cg-phase7-qa/genvm_lint.log
+          python scripts/check_contract_sdk.py 2>&1 | tee /tmp/cg-phase7-qa/contract_sdk.log
+          pyright -p pyrightconfig.json --outputjson 2>&1 | tee /tmp/cg-phase7-qa/pyright.log
+          pytest -q 2>&1 | tee /tmp/cg-phase7-qa/pytest.log
+
+      - name: Revalidate GitHub CI outcomes and build COMPLETE latest-source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_phase7_package.py --qa-dir /tmp/cg-phase7-qa --destination package
+          python package/verify_sha256.py
+          python - <<'PY'
+          import json, pathlib
+          p=pathlib.Path('package')
+          m=json.loads((p/'SHA256_MANIFEST.json').read_text())
+          actual={x.relative_to(p).as_posix() for x in p.rglob('*') if x.is_file()}
+          assert actual==set(m['files'])|{'SHA256_MANIFEST.json'},'Package missing/extra files'
+          assert m['source_git_commit']==__import__('subprocess').check_output(['git','rev-parse','HEAD'],text=True).strip()
+          print('PHASE7_COMPLETE_PACKAGE_CONTENT_VERIFIED')
+          print('PHASE7_MANIFEST_LISTED_FILES',len(m['files']))
+          print('PHASE7_SOURCE_TRACKED_FILES',m['source_tracked_files'])
+          PY
+
+      - name: Upload the ONE final ZIP (the artifact itself is the ZIP)
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ConsensusGuard_ONE_FINAL_ZIP_${{ github.sha }}
+          path: package/
+          if-no-files-found: error
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 30
+
+      - name: Re-download the produced artifact and validate EVERY contained SHA-256
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ConsensusGuard_ONE_FINAL_ZIP_${{ github.sha }}
+          path: /tmp/cg-phase7-verified-download
+
+      - name: Final zero-omission source and checksum gate after ZIP round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          python /tmp/cg-phase7-verified-download/verify_sha256.py
+          python - <<'PY'
+          from pathlib import Path
+          import json, hashlib
+          one=Path('package')
+          two=Path('/tmp/cg-phase7-verified-download')
+          p=json.loads((one/'SHA256_MANIFEST.json').read_text())
+          q=json.loads((two/'SHA256_MANIFEST.json').read_text())
+          assert p==q
+          assert {x.relative_to(one).as_posix() for x in one.rglob('*') if x.is_file()} == {x.relative_to(two).as_posix() for x in two.rglob('*') if x.is_file()}
+          for x in one.rglob('*'):
+              if x.is_file():
+                  rel=x.relative_to(one)
+                  assert hashlib.sha256(x.read_bytes()).digest()==hashlib.sha256((two/rel).read_bytes()).digest(),str(rel)
+          print('PHASE7_FINAL_ZIP_ROUND_TRIP_PASS')
+          print('PHASE7_ARCHIVE_ENTRIES',len(p['files'])+1)
+          PY
+          echo "PHASE7_DOWNLOAD_ARTIFACT_URL=${{ steps.upload.outputs.artifact-url }}"
+          echo "PHASE7_GITHUB_ARCHIVE_SHA256=${{ steps.upload.outputs.artifact-digest }}"
+          echo "PHASE7_FINAL_VERDICT=PACKAGE_READY; PUBLIC_PORTAL_SUBMISSION_NOT_READY_WITHOUT_STUDIO_DEV_APPEAL"
