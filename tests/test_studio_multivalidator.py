@@ -423,17 +423,39 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
                                   if k not in ("agree", "idle"))), flush=True)
     assert appeal_counts["agree"] >= 3
     assert appeal_counts["agree"] + appeal_counts["idle"] == 5
-    appeal_idle = [
-        receipt for receipt in appeal_receipts
-        if isinstance(receipt, dict) and
-        str(receipt.get("vote", "")).lower() == "idle"
-    ]
-    assert len(appeal_idle) == appeal_counts["idle"]
+    # On native appeal consensus the extra leader-as-validator receipt may
+    # reside in leader_receipt[1], not validators[]. Include both receipt
+    # locations, but never count the leader proposal receipt as a vote.
+    leader_history = appeal_consensus.get("leader_receipt", []) or []
+    assert isinstance(leader_history, list) and len(leader_history) in (1, 2)
+    all_appeal_validation_receipts = list(appeal_receipts) + leader_history[1:]
+    idle_vote_addresses = {
+        str(addr).lower() for addr, vote in appeal_votes.items()
+        if str(vote).lower() == "idle"
+    }
+    idle_receipts_by_address = {}
+    for receipt in all_appeal_validation_receipts:
+        if not isinstance(receipt, dict):
+            continue
+        if str(receipt.get("vote", "")).lower() != "idle":
+            continue
+        node = receipt.get("node_config")
+        assert isinstance(node, dict), "IDLE receipt must specify the validator"
+        address = str(node.get("address", "")).lower()
+        assert address in idle_vote_addresses, "Unexpected IDLE receipt address"
+        assert address not in idle_receipts_by_address, "Duplicate IDLE receipt"
+        idle_receipts_by_address[address] = receipt
+    assert set(idle_receipts_by_address) == idle_vote_addresses, (
+        "Every IDLE vote must have a matching receipt in the correct consensus slot"
+    )
     assert all(
         isinstance(r.get("genvm_result"), dict) and
         r["genvm_result"].get("error_code") == "CONSENSUS_VALIDATOR_QUORUM_REACHED"
-        for r in appeal_idle
+        for r in idle_receipts_by_address.values()
     )
+    print("STUDIO_SAFE_APPEAL_IDLE_PROOF: validated=" +
+          str(len(idle_receipts_by_address)) +
+          " leader_validation_entries=" + str(len(leader_history) - 1), flush=True)
     print("STUDIO_PHASE: APPEAL_QUORUM_VERIFIED", flush=True)
 
     # Confirm this is a NEW, independently adjudicated appeal, not a replay,
