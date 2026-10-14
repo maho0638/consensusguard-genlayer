@@ -6,6 +6,7 @@ on:
       - .github/workflows/studio-dev-appeal-preflight.yml
       - scripts/studio_dev_live_appeal_preflight.py
       - scripts/studio_dev_rpc_backend_diagnostics.py
+      - scripts/studio_dev_alternate_live_state.py
   workflow_dispatch:
 permissions:
   contents: write
@@ -24,12 +25,14 @@ jobs:
         run: python scripts/studio_dev_live_appeal_preflight.py
       - name: Check direct node RPC state without GenVM or wallet signing
         run: python scripts/studio_dev_rpc_backend_diagnostics.py
+      - name: Check explorer history and alternate RPC readonly methods
+        run: python scripts/studio_dev_alternate_live_state.py
       - name: Preserve sanitized findings only in this private audit work branch
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add evidence/STUDIO_DEV_APPEAL_LIVE_PREFLIGHT_2026-10-14.md evidence/STUDIO_DEV_RPC_BACKEND_DIAGNOSTICS_2026-10-14.md
+          git add evidence/STUDIO_DEV_APPEAL_LIVE_PREFLIGHT_2026-10-14.md evidence/STUDIO_DEV_RPC_BACKEND_DIAGNOSTICS_2026-10-14.md evidence/STUDIO_DEV_ALTERNATIVE_READS_2026-10-14.md
           if ! git diff --cached --quiet; then
             git commit -m "evidence(audit): real Studio Dev requester-only appeal preflight"
             git fetch origin audit/studio-dev-real-appeal-20261014
