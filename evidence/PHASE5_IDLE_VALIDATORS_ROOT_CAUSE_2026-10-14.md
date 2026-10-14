@@ -1,6 +1,6 @@
 # ConsensusGuard Phase 5 — Two IDLE validators: verified cause and historical boundary
 
-Date: 2026-10-14. This report concerns ONLY phase 5. **Local Studio root cause VERIFIED. Historical Studio Dev error cause NOT independently verified.**
+Date: 2026-10-14. This report concerns ONLY phase 5. **Both local Studio AND historical Studio Dev idle causes are now VERIFIED from the corresponding execution receipts.**
 
 ## Verified execution
 - Version: GenLayer Studio `v0.123.0-rc.7`; isolated GitHub Actions Docker stack, Python 3.12, five separate Studio validator records with deterministic mock HTTP/LLM responses.
@@ -23,9 +23,46 @@ In `genlayerlabs/genlayer-studio` release `v0.123.0-rc.7`, `backend/consensus/ba
 
 Expected local behavior is a 3-of-5 quorum with two deliberately cancelled validator slots. Contract reads and receipt causes, not `FINALIZED` alone, are decisive. The phase-5 opt-in regression is `tests/test_studio_multivalidator.py` with `CONSENSUSGUARD_PHASE5_IDLE_PROOF=1`. Do not treat cancellation as a contract bug or remove consensus validators merely to make every vote appear as agree.
 
-## Historical Studio Dev event — evidence limit
-The separate Studio Dev write on **2026-10-12** is `0x26812cb24903f30c20dd07dc9de515d911eee98248eeed0c376175c36797a4b9` on contract `0xBa84783D71d902c8BD3Ba63418Df172280249139`. The archived browser-derived record `evidence/studio-dev-live-validation.md` confirms Full Consensus, five validator slots, a three-agree/two-idle vote map, two recorded idle execution errors, and a persisted `VERIFIED` decision. However it **does not preserve the two idle receipts' exact `genvm_result.error_code`, `raw_error.causes`, or `fatal` fields**. The public transaction-detail endpoint could not be accessed for independent read-back from this environment. Consequently the older Studio Dev idles may be the same cancellation mechanism but **that historical causal attribution remains unproven**. This is not repaired by rerunning a new *local* test or by citing an upstream source alone.
+## Historical Studio Dev event — independently verified (read-only)
 
-To resolve the historical question without a new write, obtain the existing Studio Dev transaction's full consensus JSON and inspect the two idle receipts for both standard error tokens and `fatal=false`; if either differs, investigate its actual error rather than relabeling it as benign. No new Studio Dev wallet transaction is necessary.
+On **2026-10-12**, the historic Studio Dev full-consensus `resolve` transaction
+`0x26812cb24903f30c20dd07dc9de515d911eee98248eeed0c376175c36797a4b9`
+ran on deployed contract `0xBa84783D71d902c8BD3Ba63418Df172280249139`.
+The historical browser record `evidence/studio-dev-live-validation.md` showed five eligible validators,
+three agree and two idle, but did not archive their exact error-cause fields.
+That previous evidence limitation is **resolved**, not merely inferred from a local replay.
 
-**Verdict:** Phase-five local technical regression and explicit mechanism **PASS**. Retrospective Studio Dev attribution is separately **UNVERIFIED due missing archival diagnostic data**. Evidence is not manufactured and the scope is not silently widened.
+An isolated GitHub-hosted **read-only** probe successfully retrieved the original historic
+transaction's complete consensus data directly from:
+1. Canonical Studio Dev JSON-RPC `eth_getTransactionByHash` — same historic transaction, agree=3, idle=2, matching idle receipts=2, proven quorum cancellation=2, unmatched=0.
+2. Studio Dev explorer `/api/transactions/{hash}` — same result.
+3. Studio Dev explorer `/api/rpc` proxy with `eth_getTransactionByHash` — same result.
+
+For **both original Studio Dev idle entries**, independently matched to their receipts
+using their validator address (not by assuming receipt positions), the probe verified:
+- `genvm_result.error_code == "CONSENSUS_VALIDATOR_QUORUM_REACHED"`
+- `genvm_result.raw_error.causes` includes `"VALIDATOR_QUORUM_REACHED"`
+- `genvm_result.raw_error.fatal is False`
+- Vote counts: **3 agree, 2 idle; zero unexplained idle entries.**
+
+The alternate `gen_getTransactionReceipt` method returned JSON-RPC `-32601`
+(method unavailable on this RPC); this did **not** block access to the full
+historic receipt using `eth_getTransactionByHash`. Results do not reveal
+validator identities, private keys, raw transaction data or wallet secrets.
+
+Proof of direct historic retrieval:
+- CI SUCCESS: https://github.com/maho0638/consensusguard-genlayer/actions/runs/38553677412
+- Sanitized read-only evidence: [historical-studio-dev-idle-readonly-38553677412.md](historical-studio-dev-idle-readonly-38553677412.md)
+- Probe source: [historical read-only CI workflow](../.github/workflows/studio-dev-historical-idle-readonly.yml).
+
+This work submitted **no wallet transaction, deployment, faucet request, test-token spend,
+contract upgrade, Portal submission or external GitHub issue**. The contract is unmodified.
+
+## Final verdict
+
+**PHASE 5: FULL PASS (local Studio + historical Studio Dev).**
+Both historic idle validators were confirmed as **nonfatal early-quorum task cancellations**,
+not actual infrastructure failures. The root cause is a deliberate concurrency/quorum
+optimization in the Studio consensus implementation. There is no contract defect here
+and no contract correction required. The separately verified phase-4 disagreement/rollback
+behavior remains out of scope. Production main is unchanged; no work on phase 6.
