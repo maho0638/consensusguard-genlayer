@@ -1,0 +1,150 @@
+name: Phase 5 historical Studio Dev idle — read-only verification
+on:
+  push:
+    branches: [audit/studio-phase5-idle-validator-20261014]
+    paths:
+      - '.github/workflows/studio-dev-historical-idle-readonly.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  readonly-history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout isolated audit branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Read only canonical Studio Dev transaction and explorer details
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.request, urllib.error, socket, re
+          from pathlib import Path
+
+          TX = "0x26812cb24903f30c20dd07dc9de515d911eee98248eeed0c376175c36797a4b9"
+          CHAIN = "61997"
+          methods = [
+              ("studio-dev official RPC eth_getTransactionByHash", "POST", "https://studio-dev.genlayer.com/api", "eth_getTransactionByHash", [TX]),
+              ("studio-dev official RPC gen_getTransactionReceipt", "POST", "https://studio-dev.genlayer.com/api", "gen_getTransactionReceipt", [{"txId":TX}]),
+              ("studio-dev explorer backend transaction", "GET", "https://explorer-studio-dev.genlayer.com/api/transactions/"+TX, None, None),
+              ("studio-dev explorer RPC proxy eth_getTransactionByHash", "POST", "https://explorer-studio-dev.genlayer.com/api/rpc", "eth_getTransactionByHash", [TX]),
+          ]
+          evidence=[
+              "# Phase 5 — 2026-10-12 historical Studio Dev transaction, read-only retrieval",
+              "", "Historical transaction: \`"+TX+"\`",
+              "Studio Dev (NOT localnet), documented chain ID: "+CHAIN,
+              "GitHub CI: https://github.com/maho0638/consensusguard-genlayer/actions/runs/"+os.getenv("GITHUB_RUN_ID", "unknown"),
+              "No wallet, faucet, deploy, GenVM execution or write operation was used.",
+              "Only whitelisted known transaction lookups; raw RPC responses and node configs are never printed or stored.",
+              "", "## Endpoint diagnostics"
+          ]
+          proven=False
+          def rpc_payload(method,params):
+              return json.dumps({"jsonrpc":"2.0","id":1,"method":method,"params":params},separators=(",",":")).encode()
+          def find_consensus(obj):
+              # Only inspect known server response envelopes, not arbitrary nested
+              # strings/logs that might coincidentally contain voting records.
+              if not isinstance(obj,dict): return None
+              for c in (obj,obj.get("transaction"),obj.get("result"),obj.get("data")):
+                  if not isinstance(c,dict): continue
+                  for q in (c,c.get("transaction")):
+                      if isinstance(q,dict) and isinstance(q.get("consensus_data"),dict):
+                          return q
+              return None
+          for label,verb,url,method,params in methods:
+              print("PHASE5_READONLY_CHECK:",label,flush=True)
+              try:
+                  data=rpc_payload(method,params) if method else None
+                  req=urllib.request.Request(url, data=data, method=verb, headers={
+                      "Content-Type":"application/json",
+                      "Accept":"application/json",
+                      "User-Agent":"ConsensusGuard-Audit-Readonly/1.0"
+                  })
+                  with urllib.request.urlopen(req, timeout=18) as resp:
+                      status=resp.status
+                      body=resp.read(2_000_000)
+                      mime=resp.headers.get("Content-Type","").split(";")[0].lower()
+                  if mime not in ("application/json","application/json-rpc"):
+                      evidence.append("- "+label+": HTTP "+str(status)+"; response non-JSON ("+mime[:48]+")")
+                      continue
+                  try: payload=json.loads(body)
+                  except (UnicodeError,ValueError):
+                      evidence.append("- "+label+": HTTP "+str(status)+"; invalid JSON")
+                      continue
+                  if not isinstance(payload,dict):
+                      evidence.append("- "+label+": HTTP "+str(status)+"; unexpected JSON envelope")
+                      continue
+                  if payload.get("error"):
+                      e=payload["error"]
+                      ecode=e.get("code","unspecified") if isinstance(e,dict) else "unspecified"
+                      evidence.append("- "+label+": RPC error code "+str(ecode)[:20]+" (message intentionally redacted)")
+                      continue
+                  tx=find_consensus(payload)
+                  if tx is None:
+                      if payload.get("result") is None and verb=="POST":
+                          evidence.append("- "+label+": RPC result null: historical transaction absent from endpoint")
+                      else:
+                          evidence.append("- "+label+": response reached, but no expected full consensus_data object")
+                      continue
+                  txid=str(tx.get("hash") or tx.get("tx_id") or tx.get("txId") or "").lower()
+                  if txid and txid!=TX.lower():
+                      evidence.append("- "+label+": returned a different transaction ID, rejected")
+                      continue
+                  con=tx["consensus_data"]
+                  votes=con.get("votes",{})
+                  idle={str(k).lower() for k,v in votes.items() if str(v).lower()=="idle"} if isinstance(votes,dict) else set()
+                  receipts=con.get("validators",[])
+                  leader=con.get("leader_receipt",[])
+                  allreceipts=(receipts if isinstance(receipts,list) else []) + (leader[1:] if isinstance(leader,list) else [])
+                  matched={}
+                  for item in allreceipts:
+                      if not isinstance(item,dict):continue
+                      node=item.get("node_config",{})
+                      address=str(node.get("address","")).lower() if isinstance(node,dict) else ""
+                      if address in idle and str(item.get("vote","")).lower()=="idle":
+                          raw=item.get("genvm_result",{})
+                          if not isinstance(raw,dict):continue
+                          cause=raw.get("raw_error",{})
+                          valid=(raw.get("error_code")=="CONSENSUS_VALIDATOR_QUORUM_REACHED" and isinstance(cause,dict) and cause.get("fatal") is False and "VALIDATOR_QUORUM_REACHED" in cause.get("causes",[]))
+                          matched[address]=valid
+                  agree=sum(str(v).lower()=="agree" for v in votes.values()) if isinstance(votes,dict) else -1
+                  evidence.append("- "+label+": full consensus record located; agree="+str(agree)+" idle="+str(len(idle))+
+                                  "; matched receipts="+str(len(matched))+
+                                  "; proven benign quorum cancellation="+str(sum(matched.values()))+
+                                  "; unmatched="+str(len(idle-set(matched))))
+                  if agree==3 and len(idle)==2 and len(matched)==2 and all(matched.values()):
+                      proven=True
+              except urllib.error.HTTPError as e:
+                  evidence.append("- "+label+": HTTP "+str(e.code)+"; access/replay may be gated (response not disclosed)")
+              except (urllib.error.URLError,socket.timeout,TimeoutError,OSError) as e:
+                  evidence.append("- "+label+": transport failure "+type(e).__name__+
+                                  " ("+type(getattr(e,"reason",None)).__name__+")")
+              except (ValueError,TypeError,KeyError) as e:
+                  evidence.append("- "+label+": unexpected response shape ("+type(e).__name__+")")
+          evidence+=["","## Historical decision",
+              "**"+("VERIFIED: both historical Studio Dev IDLE records explicitly carry nonfatal quorum cancellation causes." if proven else "UNVERIFIED: no endpoint supplied BOTH historical IDLE receipts and their exact nonfatal error causes.")+"**",
+              "The local five-validator tests are separately proven and are not substituted for the historical receipt.",
+              "Historical preview state may be reset or RPC/explorer access may be restricted; these conditions do not prove the old validator causes.",
+              "For a definitive historic diagnosis if inaccessible, retrieve/export the original transaction's full JSON from the Studio Dev explorer or server-side historical archive and verify both receipts.",
+          ]
+          target=Path("evidence/historical-studio-dev-idle-readonly-"+os.getenv("GITHUB_RUN_ID","unknown")+".md")
+          target.parent.mkdir(exist_ok=True,parents=True)
+          target.write_text("\n".join(evidence)+"\n",encoding="utf-8")
+          print("HISTORICAL_IDLE_VERIFIED:",proven)
+          print("EVIDENCE_PATH:",target)
+          PY
+      - name: Preserve sanitized read-only diagnostics only on isolated audit branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add evidence/historical-studio-dev-idle-readonly-*.md
+          if ! git diff --cached --quiet; then
+            git commit -m "evidence(audit): historical Studio Dev read-only receipt retrieval outcome"
+            git fetch origin audit/studio-phase5-idle-validator-20261014
+            git rebase origin/audit/studio-phase5-idle-validator-20261014
+            git push origin HEAD:audit/studio-phase5-idle-validator-20261014
+          fi
