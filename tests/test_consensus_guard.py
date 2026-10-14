@@ -715,3 +715,129 @@ def test_decision_views_reject_invalid_ids(direct_vm, direct_deploy):
         contract.get_case(0)
     with direct_vm.expect_revert("no such decision"):
         contract.get_decision(0)
+
+
+# Phase 6 — supplementary adversarial input and authorization regressions.
+# All assertions below exercise the real Direct Mode contract, not a copy of
+# the input-validation algorithms.
+
+@pytest.mark.parametrize(
+    "unsafe_url, expected_error",
+    [
+        ("https://evidence-a.example/%00", "source URL encodes a control character"),
+        ("https://evidence-a.example/%7F", "source URL encodes a control character"),
+        ("https://evidence-a.example/%9f", "source URL encodes a control character"),
+        ("https://evidence-a.example/a/%2E%2e/b", "source URL dot segments are not allowed"),
+        ("https://evidence-a.example/%23frag", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/%3Fkey", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/%25double", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/a%5cb", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/a%3ab", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/a%20b", "source URL contains reserved percent escape"),
+        ("https://evidence-a.example/a%G0", "source URL has malformed percent escape"),
+        ("https://evidence-a.example/a%", "source URL has malformed percent escape"),
+        ("https://evidence-a.example:0443/ok", "source URL port is not allowed"),
+        ("https://evidence-a.example@evil.example/ok", "source URL userinfo is not allowed"),
+        ("https://evidence-a.example/path\\segment", "source URL contains a backslash"),
+        ("https://evidence-a.internal/ok", "source URL local hosts are not allowed"),
+        ("https://evidence-a.home.arpa/ok", "source URL local hosts are not allowed"),
+        ("https://evidence-a.example/./ok", "source URL dot segments are not allowed"),
+    ],
+)
+def test_phase6_rejects_parser_smuggling_variants(
+    direct_vm, direct_deploy, unsafe_url, expected_error
+):
+    contract = direct_deploy("contracts/consensus_guard.py")
+    body = manifest((unsafe_url, BODY_A), (URL_B, BODY_B))
+    with direct_vm.expect_revert(expected_error):
+        open_case(contract, sources_json=body, key="p6-smuggling")
+    assert contract.case_count() == 0 and contract.decision_count() == 0
+
+
+@pytest.mark.parametrize(
+    "bad_manifest, expected_error",
+    [
+        ("[" + " " * 8200 + "]", "manifest size out of range"),
+        (json.dumps([{"url": URL_A, "sha256": digest(BODY_A)},
+                     {"url": URL_B, "sha256": digest(BODY_B)},
+                     {"url": "https://evidence-c.example/report.txt",
+                      "sha256": digest(BODY_C)},
+                     {"url": "https://evidence-d.example/report.txt",
+                      "sha256": digest(BODY_A)},
+                     {"url": "https://evidence-e.example/report.txt",
+                      "sha256": digest(BODY_B)},
+                     {"url": "https://evidence-f.example/report.txt",
+                      "sha256": digest(BODY_C)}]), "source count out of range"),
+        ('[{"url":"' + URL_A + '","sha256":"' + digest(BODY_A) +
+         '","sha256":"' + digest(BODY_A) + '"},'
+         '{"url":"' + URL_B + '","sha256":"' + digest(BODY_B) + '"}]',
+         "manifest contains duplicate JSON object keys"),
+        (json.dumps([{"url": URL_A, "sha256": digest(BODY_A).upper()},
+                     {"url": URL_B, "sha256": digest(BODY_B)}]),
+         "sha256 must be 64 lowercase hexadecimal characters"),
+    ],
+)
+def test_phase6_manifest_ambiguity_rejected_atomically(
+    direct_vm, direct_deploy, bad_manifest, expected_error
+):
+    contract = direct_deploy("contracts/consensus_guard.py")
+    with direct_vm.expect_revert(expected_error):
+        open_case(contract, sources_json=bad_manifest, key="p6-invalid")
+    assert contract.case_count() == 0
+    assert contract.decision_count() == 0
+
+
+def test_phase6_requester_namespace_isolated_without_cross_user_overwrite(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy("contracts/consensus_guard.py")
+    alice_case = open_case(contract, key="shared-name")
+    direct_vm.sender = direct_bob
+    bob_case = open_case(contract, key="shared-name")
+    assert alice_case == 0 and bob_case == 1
+    a = json.loads(contract.get_case(alice_case))
+    b = json.loads(contract.get_case(bob_case))
+    assert a["case_key"] == b["case_key"] == "shared-name"
+    assert a["requester"] != b["requester"]
+    assert a["state"] == b["state"] == "OPEN"
+    assert contract.case_count() == 2 and contract.decision_count() == 0
+    with direct_vm.expect_revert("case key already used"):
+        open_case(contract, key="shared-name")
+    direct_vm.sender = direct_alice
+    with direct_vm.expect_revert("case key already used"):
+        open_case(contract, key="shared-name")
+    assert contract.case_count() == 2
+
+
+def test_phase6_case_key_normalization_cannot_split_requester_namespace(
+    direct_vm, direct_deploy
+):
+    contract = direct_deploy("contracts/consensus_guard.py")
+    cid = open_case(contract, key="  fixed  ")
+    assert json.loads(contract.get_case(cid))["case_key"] == "fixed"
+    with direct_vm.expect_revert("case key already used"):
+        open_case(contract, key="fixed")
+    assert contract.case_count() == 1
+
+
+@pytest.mark.parametrize("label_payload", [
+    '{"labels":[true,true]}',
+    '{"labels":[0,0]}',
+    '{"labels":[null,null]}',
+    '{"labels":[["SUPPORTS"],["SUPPORTS"]]}',
+    '{"labels":{"0":"SUPPORTS","1":"SUPPORTS"}}',
+    '{"labels":["SUPPORTS","SUPPORTS"],"labels":["REFUTES","REFUTES"]}',
+])
+def test_phase6_classifier_type_confusion_cannot_write_decision(
+    direct_vm, direct_deploy, label_payload
+):
+    direct_vm.mock_web(URL_A.replace(".", r"\."), {"status": 200, "body": BODY_A.decode()})
+    direct_vm.mock_web(URL_B.replace(".", r"\."), {"status": 200, "body": BODY_B.decode()})
+    direct_vm.mock_llm(r"evidence classifier inside a smart contract", label_payload)
+    contract = direct_deploy("contracts/consensus_guard.py")
+    case_id = open_case(contract, key="p6-typed")
+    with direct_vm.expect_revert():
+        contract.resolve(case_id)
+    assert contract.case_count() == 1 and contract.decision_count() == 0
+    assert json.loads(contract.get_case(case_id))["state"] == "OPEN"
