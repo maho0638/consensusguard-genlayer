@@ -299,9 +299,9 @@ def test_studio_disagreement_rollback_and_recovery():
     print("PHASE4_HISTORY_ROUNDS:", ",".join(safe_rounds), flush=True)
     rotation = full_tx.get("rotation_count")
     print("PHASE4_ROTATION_COUNT:", rotation if isinstance(rotation, int) else "UNAVAILABLE", flush=True)
-    assert isinstance(rotation, int) and rotation >= 1, (
-        "Real leader rotation was not proven by the full Studio transaction"
-    )
+    assert rotation == 0, "A five-member full committee unexpectedly rotated with no spare validator"
+    assert "Undetermined" in safe_rounds, "No terminal Undetermined consensus history"
+    print("PHASE4_NO_SPARE_ROTATION: count=0 terminal=Undetermined", flush=True)
     # Explicit round history, if returned, must not show a positive agreement.
     assert not any("Accepted" == n for n in safe_rounds), (
         "Conflict transaction history unexpectedly records a majority accept"

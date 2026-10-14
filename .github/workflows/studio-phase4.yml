@@ -6,6 +6,7 @@ on:
       - '.github/workflows/studio-phase4.yml'
       - '.ci/studio-v123-compose.yml'
       - 'tests/test_studio_phase4_disagreement.py'
+      - 'tests/test_studio_phase4_rotation.py'
       - 'contracts/consensus_guard.py'
   workflow_dispatch:
 permissions:
@@ -75,7 +76,7 @@ jobs:
           export CONSENSUSGUARD_PHASE2_ONLY=1
           export CONSENSUSGUARD_PHASE3_APPEAL=0
           set +e
-          gltest tests/test_studio_phase4_disagreement.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
+          gltest tests/test_studio_phase4_disagreement.py tests/test_studio_phase4_rotation.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
           status=$?
           set -e
           python - <<'PY'
@@ -84,7 +85,7 @@ jobs:
           s=Path('/tmp/cg-private-pytest.log').read_text(errors='replace')
           markers=['version_too_big','invalid_contract','wallet','insufficient','fee','connection refused',
                    'error code','timeout','deploymenterror','transactionerror','executionerror']
-          print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b1 passed\b',s) else 'CHECK_EXIT_CODE')
+          print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b2 passed\b',s) else 'CHECK_EXIT_CODE')
           print('STUDIO_TEST_LOG_LENGTH:', len(s))
           for line in s.splitlines():
               if 'STUDIO_PHASE:' in line or 'LOCAL_STUDIO_VALIDATOR_COUNT:' in line or line.startswith('PHASE4_'):
@@ -281,19 +282,19 @@ jobs:
           import os
           import re
           lines=Path('/tmp/cg-private-pytest.log').read_text(errors='replace').splitlines() if Path('/tmp/cg-private-pytest.log').exists() else []
-          allowed = re.compile(r'^PHASE4_(?:READY|DISAGREEMENT_START|WAIT_RETURNED|WAIT_EXCEPTION_CLASS|DISAGREEMENT_TX|FINAL_STATUS|CONSENSUS_KEYS|VOTES|RECEIPT_STATUS|RPC_STATUS|CHAIN_STATE|HISTORY_ROUNDS|ROTATION_COUNT|ROLLBACK_STATE|RECOVERY_START|RECOVERY_TX|RECOVERY_STATE|COMPLETE):?')
+          allowed = re.compile(r'^PHASE4_(?:READY|DISAGREEMENT_START|WAIT_RETURNED|WAIT_EXCEPTION_CLASS|DISAGREEMENT_TX|FINAL_STATUS|CONSENSUS_KEYS|VOTES|RECEIPT_STATUS|RPC_STATUS|CHAIN_STATE|HISTORY_ROUNDS|ROTATION_COUNT|ROLLBACK_STATE|RECOVERY_START|RECOVERY_TX|RECOVERY_STATE|COMPLETE|ROTATION_READY|ROTATION_COMPLETE|NO_SPARE_ROTATION):?')
           records=[]
           for line in lines:
               if allowed.match(line):
                   line=re.sub(r'0x[0-9a-fA-F]{64}', lambda m:m.group(0), line)
                   if not re.search(r'(?:password|private.key|secret|apikey|token|node_config)',line,re.I):
                       records.append(line[:350])
-          passed=any('PHASE4_COMPLETE: REAL_STUDIO_DISAGREEMENT_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any(re.search(r'\b1 passed\b',line) for line in lines)
+          passed=any('PHASE4_COMPLETE: REAL_STUDIO_DISAGREEMENT_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any('PHASE4_ROTATION_COMPLETE: REAL_STUDIO_SPARE_VALIDATOR_ROTATION_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any(re.search(r'\b1 passed\b',line) for line in lines)
           out=['# Phase 4 — independent local Studio 5-validator disagreement and rollback',
                '', 'CI run: '+os.environ.get('GITHUB_RUN_ID','unknown'),
                'CI head SHA: '+os.environ.get('GITHUB_SHA','unknown'),
-               'Scope: controlled 2/2/1 mismatched LLM answers across five independent validator processes.',
-               'Required: three real disagree votes, recorded leader rotation, unchanged OPEN state, zero decisions, and successful retry. FINALIZED is a lifecycle status and does not prove state commitment.',
+               'Scope: first verify exhausted 5-validator pool (2/2/1); then verify a 5-member committee with one spare 6th validator (2/2/2) can rotate.',
+               'Required: real dissent, unchanged OPEN state and successful retry in both tests; rotation_count=0 with no spare, rotation_count>=1 with six-validator pool. FINALIZED is a lifecycle status.',
                'This is local Studio, NOT Bradbury; validator secrets and raw transaction receipts are excluded.',
                '', '## Safe checkpoints']+['- '+r for r in records]
           for path,title in [('/tmp/cg-safe-tx-status.txt','Database state summary'),
