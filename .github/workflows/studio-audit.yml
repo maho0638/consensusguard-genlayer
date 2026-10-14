@@ -1,7 +1,7 @@
 name: ConsensusGuard independent five-validator Studio CI audit
 on:
   push:
-    branches: [audit/studio-phase2-5validator-20261014]
+    branches: [audit/studio-phase3-appeal-20261014]
     paths:
       - '.github/workflows/studio-audit.yml'
       - '.ci/studio-v123-compose.yml'
@@ -66,13 +66,14 @@ jobs:
             sleep 10
           done
           echo "::error::Consensus worker did not become healthy in 6 minutes"; exit 1
-      - name: Real five-validator full Studio deploy-open-resolve test
+      - name: Real five-validator Studio deploy-open-resolve-appeal lifecycle test
         shell: bash
         run: |
           set -uo pipefail
           export CONSENSUSGUARD_RUN_STUDIO=1
           export CONSENSUSGUARD_PHASE1_ONLY=0
           export CONSENSUSGUARD_PHASE2_ONLY=1
+          export CONSENSUSGUARD_PHASE3_APPEAL=1
           set +e
           gltest tests/test_studio_multivalidator.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
           status=$?
@@ -96,6 +97,7 @@ jobs:
           for line in s.splitlines():
               if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
                                    "STUDIO_RESOLVE_SAFE_CASE_STATE:", "STUDIO_SAFE_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_VOTE_COUNTS:", "STUDIO_SAFE_APPEAL_RESULT:",
                                    "STUDIO_RESOLVE_VM_KIND:",
                                    "STUDIO_RESOLVE_VM_ERROR_COUNT:",
                                    "STUDIO_RESOLVE_VM_ERROR:")):
@@ -228,12 +230,15 @@ jobs:
           docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
             -c "SELECT 'RESOLVE_CONSENSUS|status=' || status || '|type=' || type || '|validator_entries=' || CASE WHEN jsonb_typeof(consensus_data::jsonb->'validators')='array' THEN jsonb_array_length(consensus_data::jsonb->'validators')::text ELSE 'NA' END || '|votes_type=' || COALESCE(jsonb_typeof(consensus_data::jsonb->'votes'),'missing') FROM transactions WHERE type=2 ORDER BY created_at DESC LIMIT 1;" \
             >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'LIFECYCLE|total=' || count(*) || '|finalized=' || count(*) FILTER (WHERE status='FINALIZED') || '|unfinalized=' || count(*) FILTER (WHERE status!='FINALIZED') || '|write_calls=' || count(*) FILTER (WHERE type=2) FROM transactions;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
           python - <<'PY'
           from pathlib import Path
           import re
           p=Path('/tmp/cg-safe-tx-status.txt')
           lines=p.read_text(errors='replace').splitlines() if p.exists() else []
-          safe=[s for s in lines if re.fullmatch(r'(?:TX_(?:STATE|DETAIL|AGE)|RESOLVE_CONSENSUS)\|[A-Za-z0-9_|=.-]{1,240}',s)]
+          safe=[s for s in lines if re.fullmatch(r'(?:TX_(?:STATE|DETAIL|AGE)|RESOLVE_CONSENSUS|LIFECYCLE)\|[A-Za-z0-9_|=.-]{1,240}',s)]
           p.write_text('\n'.join(safe or ['DB_STATUS_UNAVAILABLE'])+'\n', encoding='utf-8')
           for l in safe: print('SAFE_DB:',l)
           PY
@@ -266,7 +271,7 @@ jobs:
           output.write_text('\n'.join(result)+'\n',encoding='utf-8')
           for row in result: print('STUDIO_SAFE_WORKER:',row)
           PY
-      - name: Publish sanitized phase-two result on isolated audit branch
+      - name: Publish sanitized phase-three lifecycle result on isolated audit branch
         if: always()
         shell: bash
         run: |
@@ -278,10 +283,10 @@ jobs:
           src = Path('/tmp/cg-private-pytest.log')
           lines = src.read_text(errors='replace').splitlines() if src.exists() else []
           output = [
-              '# ConsensusGuard local Studio phase-2 five-validator integration',
+              '# ConsensusGuard local Studio phase-3 five-validator appeal lifecycle',
               '',
               'GitHub Actions run: ' + os.environ.get('GITHUB_RUN_ID', 'unknown'),
-              'Test scope: deploy, open_case and nondeterministic resolve; no appeal or rollback.',
+              'Test scope: deploy, open_case, resolve, and appeal with independent consensus; rollback out of scope.',
               'No validator configs, secrets or raw receipts are included.',
               '',
               '## Safe phase and transaction status checkpoints',
@@ -290,6 +295,8 @@ jobs:
                     'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS',
                     'FIVE_DISTINCT_REGISTERED_VALIDATORS','FIVE_VALIDATOR_MOCKS_READY',
                     'RESOLVE_START','RESOLVE_FINALIZED','FIVE_VALIDATOR_QUORUM_VERIFIED','FIVE_VALIDATOR_RESOLVE_PASS',
+                    'APPEAL_VALIDATORS_READY','APPEAL_START','APPEAL_FINALIZED',
+                    'APPEAL_QUORUM_VERIFIED','APPEAL_HISTORY_VERIFIED','FULL_APPEAL_LIFECYCLE_PASS',
                     'REGISTERED_MOCK_1','REGISTERED_MOCK_2','REGISTERED_MOCK_3',
                     'REGISTERED_MOCK_4','REGISTERED_MOCK_5'}
           pattern = re.compile(r'STUDIO_SAFE_WAIT_(START|DONE|FAILURE): (0x[0-9a-fA-F]{64}) status= ([A-Za-z_0-9]+)(?: (?:target|exception)= ([A-Za-z_0-9]+))?')
@@ -310,37 +317,39 @@ jobs:
                                    "STUDIO_RESOLVE_VM_ERROR:")):
                   output.append('- ' + line[:300])
           for line in lines:
-              if line.startswith("STUDIO_SAFE_VOTE_COUNTS:"):
-                  output.append('- ' + line[:160])
+              if line.startswith(("STUDIO_SAFE_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_RESULT:")):
+                  output.append('- ' + line[:220])
           dbpath=Path('/tmp/cg-safe-tx-status.txt')
           output.extend(['','## Local transaction state summaries'])
           if dbpath.exists():
-              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','RESOLVE_CONSENSUS|','DB_STATUS_UNAVAILABLE'))])
+              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','RESOLVE_CONSENSUS|','LIFECYCLE|','DB_STATUS_UNAVAILABLE'))])
           event_path=Path('/tmp/cg-safe-worker-stages.txt')
           output.extend(['', '## Worker stages (counts only)'])
           if event_path.exists():
               output.extend(['- '+line for line in event_path.read_text().splitlines() if line.startswith('WORKER_STAGE|')])
           output.extend([
               '', '## Result',
-              'PASS' if any('STUDIO_PHASE: FIVE_VALIDATOR_RESOLVE_PASS' in l for l in lines)
+              'PASS' if any('STUDIO_PHASE: FULL_APPEAL_LIFECYCLE_PASS' in l for l in lines)
                         and any(re.search(r'\b1 passed\b', l) for l in lines)
               else 'NOT YET CONFIRMED / FAILED',
           ])
-          target = Path('evidence/audit-studio-phase2-5validator-' + os.environ.get('GITHUB_RUN_ID', 'unknown') + '.md')
+          target = Path('evidence/audit-studio-phase3-appeal-' + os.environ.get('GITHUB_RUN_ID', 'unknown') + '.md')
           target.parent.mkdir(parents=True, exist_ok=True)
           target.write_text('\n'.join(output) + '\n', encoding='utf-8')
           print('Safe diagnostic file generated:', target)
           PY
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git add evidence/audit-studio-phase2-5validator-*.md
+          git add evidence/audit-studio-phase3-appeal-*.md
           if git diff --cached --quiet; then
             echo "No new audit diagnostics"; exit 0
           fi
-          git commit -m "evidence(audit): save sanitized phase-two consensus diagnostic"
-          git fetch origin audit/studio-phase2-5validator-20261014
-          git rebase origin/audit/studio-phase2-5validator-20261014
-          git push origin HEAD:audit/studio-phase2-5validator-20261014
+          git commit -m "evidence(audit): save sanitized phase-three appeal lifecycle proof"
+          git fetch origin audit/studio-phase3-appeal-20261014
+          git rebase origin/audit/studio-phase3-appeal-20261014
+          git push origin HEAD:audit/studio-phase3-appeal-20261014
       - name: Stop and remove ONLY disposable audit containers (preserve nothing)
         if: always()
         run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
