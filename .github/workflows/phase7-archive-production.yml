@@ -5,6 +5,8 @@ on:
       - audit/phase7-final-delivery-20261014
     paths:
       - .github/workflows/phase7-archive-production.yml
+      - scripts/build_phase7_package.py
+      - scripts/run_phase7_ci.sh
   workflow_dispatch:
 jobs:
   build-archive:
