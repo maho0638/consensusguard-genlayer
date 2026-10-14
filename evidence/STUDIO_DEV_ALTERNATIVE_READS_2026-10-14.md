@@ -1,7 +1,7 @@
 # ConsensusGuard — Studio Dev non-GenVM contract and explorer read-only fallback
 
 Official Studio source: local tag v0.123.0-rc.7, endpoint implementations.
-CI https://github.com/maho0638/consensusguard-genlayer/actions/runs/38572274052
+CI https://github.com/maho0638/consensusguard-genlayer/actions/runs/38572848529
 No wallet secrets, no wallet signature, no GEN spending or transactions.
 
 - RPC_contract_code: text len=33304, available=true
