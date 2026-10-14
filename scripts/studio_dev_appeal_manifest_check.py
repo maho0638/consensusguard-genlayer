@@ -24,7 +24,8 @@ assert sources[1]["sha256"]=="1ae8c7be8b2c578b9b8b04130a4e62b6f96288fd30deb08aa2
 # the original human-validated evidence content. This checks one-appeal wiring,
 # not an independent re-review of newly published evidence.
 manifest=json.dumps([{"url":s["url"],"sha256":s["sha256"]} for s in sources[::-1]],separators=(",",":"))
-new_hash=sha(manifest.encode())
+canonical_manifest=json.dumps([{"url":s["url"],"sha256":s["sha256"]} for s in sources[::-1]],separators=(",",":"),sort_keys=True)
+new_hash=sha(canonical_manifest.encode())
 original_hash="84f349ded38dfd428b3c83f35756bb4d1699ee90850a80e6f6f3577e8cd6fede"
 assert new_hash!=original_hash
 report=[
@@ -41,9 +42,9 @@ report=[
 "- Manifest reorder only: prior source texts and statuses remain unchanged; demonstrates case lifecycle only.",
 "- Original test wallet signature is mandatory; requester-only contract authorization cannot be bypassed.",
 "",
-"\`\`\`json",
+"```json",
 manifest,
-"\`\`\`",
+"```",
 "",
 "## Independent source HTTP retrieval",
 ]
