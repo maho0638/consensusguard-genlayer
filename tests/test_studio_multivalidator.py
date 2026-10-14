@@ -36,6 +36,34 @@ def _manifest():
     return json.dumps(sources, separators=(",", ":"))
 
 
+
+def _verify_phase5_idle_cancellation(votes, idle_receipts_by_address, label):
+    """Require a majority and prove BOTH idle entries are early-quorum cancellations.
+
+    Never treat an idle response as an independent agree vote.
+    """
+    from collections import Counter
+    count = Counter(str(v).lower() for v in votes.values())
+    assert count["agree"] == 3 and count["idle"] == 2, (
+        "Phase 5 requires direct reproduction of 3 agree + 2 idle"
+    )
+    assert len(idle_receipts_by_address) == 2, "Exactly two idle receipts are required"
+    for receipt in idle_receipts_by_address.values():
+        genvm = receipt.get("genvm_result")
+        assert isinstance(genvm, dict), "Idle receipt missing GenVM execution diagnostics"
+        assert genvm.get("error_code") == "CONSENSUS_VALIDATOR_QUORUM_REACHED", (
+            "Unexplained idle could be a real validator failure"
+        )
+        raw = genvm.get("raw_error")
+        assert isinstance(raw, dict), "Idle receipt has no raw protocol cause record"
+        assert raw.get("fatal") is False, "Idle cancellation must be nonfatal"
+        assert "VALIDATOR_QUORUM_REACHED" in raw.get("causes", []), (
+            "Idle receipt was not created by terminal quorum cancellation"
+        )
+    print("STUDIO_PHASE5_IDLE_PROOF: " + label +
+          " agree=3 idle=2 synthetic_quorum_cancellations=2 " +
+          "fatal=0 unexplained_idle=0", flush=True)
+
 def test_studio_five_mock_validators_finalize_matching_evidence():
     """Five-validator Studio quorum: independently verify until decisive majority."""
     from gltest import get_contract_factory, get_validator_factory, get_gl_client
@@ -331,6 +359,8 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
         r["genvm_result"].get("error_code") == "CONSENSUS_VALIDATOR_QUORUM_REACHED"
         for r in first_idle_by_address.values()
     ), "IDLE must be attributable to early quorum, never unproven infrastructure failure"
+    if os.environ.get("CONSENSUSGUARD_PHASE5_IDLE_PROOF") == "1":
+        _verify_phase5_idle_cancellation(observed_votes, first_idle_by_address, "RESOLVE")
     print("STUDIO_PHASE: FIVE_VALIDATOR_QUORUM_VERIFIED", flush=True)
 
     case = json.loads(contract.get_case(args=[case_id]).call())
@@ -473,6 +503,9 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     print("STUDIO_SAFE_APPEAL_IDLE_PROOF: validated=" +
           str(len(idle_receipts_by_address)) +
           " leader_validation_entries=" + str(len(leader_history) - 1), flush=True)
+    if os.environ.get("CONSENSUSGUARD_PHASE5_IDLE_PROOF") == "1":
+        _verify_phase5_idle_cancellation(appeal_votes, idle_receipts_by_address, "APPEAL")
+        print("STUDIO_PHASE5_COMPLETE: RESOLVE_AND_APPEAL_TWO_IDLE_CAUSE_PROVEN", flush=True)
     print("STUDIO_PHASE: APPEAL_QUORUM_VERIFIED", flush=True)
 
     # Confirm this is a NEW, independently adjudicated appeal, not a replay,
