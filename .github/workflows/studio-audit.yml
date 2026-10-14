@@ -6,6 +6,7 @@ on:
       - '.github/workflows/studio-audit.yml'
       - '.ci/studio-v123-compose.yml'
       - 'tests/test_studio_multivalidator.py'
+      - 'contracts/consensus_guard.py'
   workflow_dispatch:
 permissions:
   contents: write
