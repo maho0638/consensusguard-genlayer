@@ -1,0 +1,373 @@
+name: ConsensusGuard phase 6 full integration + security audit
+on:
+  push:
+    branches: [audit/phase6-full-security-regression-20261014]
+    paths:
+      - '.github/workflows/phase6-full-audit.yml'
+      - '.ci/studio-v123-compose.yml'
+      - 'tests/test_studio_multivalidator.py'
+      - 'tests/test_studio_phase4_disagreement.py'
+      - 'tests/test_studio_phase4_rotation.py'
+      - 'tests/test_consensus_guard.py'
+      - 'contracts/consensus_guard.py'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  studio-five-validator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      COMPOSE_PARALLEL_LIMIT: '1'
+      COMPOSE: .ci/studio-v123-compose.yml
+      PROJECT: cg123ci
+    steps:
+      - name: Checkout exact isolated audit branch (never touches main)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install exact pinned test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements-lock.txt
+          python -m pip check
+          python scripts/verify_toolchain_bundles.py
+      - name: Confirm untouched production contract and isolated Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(head -n 1 contracts/consensus_guard.py)" = '# v0.3.0'
+          grep -F 'py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng' contracts/consensus_guard.py > /dev/null
+          docker version
+          docker compose -p "$PROJECT" -f "$COMPOSE" config --quiet
+          if [ "$(docker compose -p "$PROJECT" -f "$COMPOSE" config --services | wc -l)" -ne 6 ]; then
+            echo "::error::Unexpected Compose service count"; exit 1
+          fi
+          echo "Pinned contract and six isolated services verified"
+      - name: Pull pinned official Studio v0.123.0-rc.7 images
+        run: docker compose -p "$PROJECT" -f "$COMPOSE" pull
+      - name: Start local full consensus stack, five mock validators later
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker compose -p "$PROJECT" -f "$COMPOSE" up -d consensus-worker; then
+            echo "::error::Isolated full-consensus stack failed to start"
+            docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+            exit 1
+          fi
+          docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+          for attempt in $(seq 1 36); do
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' cg123ci-consensus-worker-1)"
+            echo "Worker startup check $attempt: $state"
+            if [ "$state" = healthy ]; then
+              echo "Consensus worker healthy"; exit 0
+            fi
+            if [ "$state" = unhealthy ] || [ "$state" = exited ]; then
+              echo "::error::Consensus worker failed during startup"; exit 1
+            fi
+            sleep 10
+          done
+          echo "::error::Consensus worker did not become healthy in 6 minutes"; exit 1
+      - name: Full Studio appeal, validator disagreement, rollback, retry, leader rotation
+        shell: bash
+        run: |
+          set -uo pipefail
+          export CONSENSUSGUARD_RUN_STUDIO=1
+          export CONSENSUSGUARD_PHASE1_ONLY=0
+          export CONSENSUSGUARD_PHASE2_ONLY=1
+          export CONSENSUSGUARD_PHASE3_APPEAL=1
+          export CONSENSUSGUARD_PHASE5_IDLE_PROOF=1
+          set +e
+          gltest tests/test_studio_multivalidator.py tests/test_studio_phase4_disagreement.py tests/test_studio_phase4_rotation.py -v -s --network localnet -c pyproject.toml > /tmp/cg-private-pytest.log 2>&1
+          status=$?
+          set -e
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('/tmp/cg-private-pytest.log').read_text(errors='replace')
+          markers=['version_too_big','invalid_contract','wallet','insufficient','fee','connection refused',
+                   'error code','timeout','deploymenterror','transactionerror','executionerror']
+          print('STUDIO_TEST_RESULT:', 'PASS' if re.search(r'\b3 passed\b',s) else 'CHECK_EXIT_CODE')
+          print('STUDIO_TEST_LOG_LENGTH:', len(s))
+          for line in s.splitlines():
+              if 'STUDIO_PHASE:' in line or 'LOCAL_STUDIO_VALIDATOR_COUNT:' in line:
+                  sanitized = line.split('STUDIO_PHASE:')[-1] if 'STUDIO_PHASE:' in line else line.split('LOCAL_STUDIO_VALIDATOR_COUNT:')[-1]
+                  print('STUDIO_SAFE_PHASE:',sanitized[:85])
+          for line in s.splitlines():
+              if line.startswith(('PHASE4_', 'STUDIO_PHASE5_')):
+                  if not any(k in line.lower() for k in ('private_key','node_config','secret','password','api_key')):
+                      print('PHASE6_SAFE_CHECK:', line[:360])
+          for line in s.splitlines():
+              if line.startswith('STUDIO_SAFE_WAIT_START:') or line.startswith('STUDIO_SAFE_WAIT_DONE:') or line.startswith('STUDIO_SAFE_WAIT_FAILURE:'):
+                  # Instrumentation prints only tx hash, status, wait target and exception class.
+                  print(line[:300])
+          for line in s.splitlines():
+              if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
+                                   "STUDIO_RESOLVE_SAFE_CASE_STATE:", "STUDIO_SAFE_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_VOTE_COUNTS:", "STUDIO_SAFE_APPEAL_RESULT:",
+                                   "STUDIO_PHASE5_IDLE_PROOF:", "STUDIO_PHASE5_COMPLETE:",
+                                   "STUDIO_RESOLVE_VM_KIND:",
+                                   "STUDIO_RESOLVE_VM_ERROR_COUNT:",
+                                   "STUDIO_RESOLVE_VM_ERROR:")):
+                  print(line[:300])
+          # The failure's top-level exception class (no traceback or receipts).
+          safe_names=['TimeoutError','TransactionTimeoutError','TransactionError','DeploymentError','AssertionError','TransactionNotFound']
+          print('STUDIO_EXCEPTION_CLASS_MARKERS:',[name for name in safe_names if name in s])
+          for line in s.splitlines():
+              if 'STUDIO_RPC_CHAIN_ID:' in line and 'SDK_CLIENT_CHAIN_ID:' in line:
+                  print('STUDIO_SAFE_CHAIN_IDS:',line[-180:])
+          print('STUDIO_TEST_ERROR_MARKERS:', [m for m in markers if m in s.lower()])
+          # Safe exception detail: print error *kind* and a short message only,
+          # never raw receipts, validator configs or embedded private keys.
+          for line in s.splitlines()[-65:]:
+              line=line.strip()
+              if 'node_config' in line or 'private_key' in line or 'mock_response' in line:
+                  continue
+              if not (line.startswith('E   ') or line.startswith('gltest.exceptions.')
+                      or line.startswith('genlayer_py.') or line.startswith('ValueError:')
+                      or line.startswith('TypeError:') or line.startswith('RuntimeError:')):
+                  continue
+              line=line.split('receipt:')[0].split('receipt=')[0]
+              line=line.split('{')[0].split('[')[0]
+              line=re.sub(r'0x[0-9a-fA-F]{24,}', '[REDACTED_HEX]', line)
+              line=re.sub(r'(?i)(private.key|secret|token|api.key)\\s*[=:]\\s*\\S+',r'\\1=[REDACTED]',line)
+              print('STUDIO_SAFE_ERROR:',line[:280])
+          for line in s.splitlines():
+              if (re.match(r'^=+ (1 passed|1 failed|1 skipped|short test summary)', line) or
+                  re.match(r'^FAILED (?:tests/|::)', line)):
+                  print('TEST_SUMMARY:',line.split(' - ')[0][:180])
+          PY
+          echo "TEST_EXIT_CODE=$status"
+          exit "$status"
+      - name: Print sanitized service diagnostic only, never private test receipts
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          docker compose -p "$PROJECT" -f "$COMPOSE" ps -a
+          docker compose -p "$PROJECT" -f "$COMPOSE" logs --no-color --tail=120 consensus-worker jsonrpc > /tmp/cg-private-services.log 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('/tmp/cg-private-services.log').read_text(errors='replace').lower()
+          markers=['version_too_big','invalid_contract','runner malformed','too many requests',
+                   'feevalue','insufficient','out of memory','no such file','no module',
+                   'address already in use','connection refused','fatal','timeout','panic']
+          print('SERVICE_LOG_LENGTH:',len(s))
+          print('SERVICE_ERROR_MARKERS:',[m for m in markers if m in s])
+          print('SERVICE_WORKER_ERROR_CLASSES:',[
+              m for m in ('WorkerNotRunning','NoValidators','MissingValidators','TimeOut','TimeoutError',
+                          'NotEnoughValidators','FailedToExecute','OutOfMemory','ValidationError')
+              if m.lower() in s
+          ])
+          # Only summarize Python exception categories from VM_ERROR stderr.
+          # Keep the original execution payload and receipts private.
+          import json
+          import re
+          from collections import Counter
+          errors=Counter()
+          for raw in Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines():
+              if 'VM_ERROR' not in raw or '"stderr"' not in raw:
+                  continue
+              match=re.search(r'"stderr"\s*:\s*("(?:\\.|[^"\\])*")',raw)
+              if not match:
+                  continue
+              try:
+                  err=json.loads(match.group(1))
+              except (json.JSONDecodeError, ValueError):
+                  continue
+              types=re.findall(r'(?m)^(?:[a-zA-Z_][\w.]*\.)?([A-Za-z_]*(?:Error|Exception)):',err)
+              if types:
+                  errors[types[-1]]+=1
+              else:
+                  errors['UNKNOWN_TRACEBACK' if 'Traceback' in err else 'NO_TRACEBACK']+=1
+              # Exception cause identifiers are standard code tokens, not
+              # exception message bodies. Reject anything outside token syntax.
+              for tail in err.splitlines()[-4:]:
+                  if 'NondetException:' in tail:
+                      reason=tail.partition('NondetException:')[2]
+                      for token in re.findall(r'\b[A-Z][A-Z0-9_]{3,59}\b',reason):
+                          errors['NONDET_CAUSE_'+token]+=1
+              frames=re.findall(r'File "([^"]+)", line \d+, in ([A-Za-z_]\w*)',err)
+              for filename, func in frames[-6:]:
+                  leaf=filename.rsplit('/',1)[-1]
+                  if re.fullmatch(r'[A-Za-z0-9_.-]{1,70}',leaf):
+                      errors['FRAME_'+leaf.upper().replace('.','_')]+=1
+              # Never log error bodies or filenames; only code-level exception
+              # class and coarse error vocabulary.
+              for term in ('isinstance', 'object', 'bytes', 'str', 'get',
+                           'decode', 'json', 'prompt', 'dict', 'list', 'return',
+                           'not', 'callable', 'none', 'missing', 'args',
+                           'http', 'parse', 'method', 'attribute'):
+                  if term in err.lower():
+                      errors['TOKEN_'+term.upper()]+=1
+          print('GENVM_SANITIZED_EXCEPTION_COUNTS:',dict(errors))
+          # Startup-only errors and exceptions: never print user/mock transaction bodies.
+          import re
+          original=Path('/tmp/cg-private-services.log').read_text(errors='replace').splitlines()
+          visible=[]
+          for line in original:
+              lower=line.lower()
+              if ('transaction' in lower or 'private_key' in lower or
+                  'node_config' in lower or 'mock_' in lower or 'openai' in lower):
+                  continue
+              if not any(word in lower for word in
+                         ('error','traceback','exception','failed','config','genvm',
+                          'precompil','missing','abort','fatal','process','exit','signal',
+                          'unable','cannot','no such')):
+                  continue
+              line=re.sub(r'0x[0-9a-fA-F]{40,}', '[REDACTED_HEX]',line)
+              line=re.sub(r'(?i)(password|apikey|token|secret)[=: ]+[^\\s,}]+', r'\\1=[REDACTED]',line)
+              visible.append(line[:380])
+          for line in visible[-42:]:
+              print('SERVICE_SAFE_DIAGNOSTIC:',line)
+          PY
+      - name: Inspect local transaction-state database (status only)
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_STATE|' || status || '|count=' || count(*) FROM transactions GROUP BY status ORDER BY status;" \
+            > /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_DETAIL|' || status || '|type=' || type || '|mode=' || COALESCE(execution_mode::text, 'null') || '|timestamp_missing=' || (timestamp_awaiting_finalization IS NULL)::text || '|blocked=' || (blocked_at IS NOT NULL)::text || '|address_missing=' || (to_address IS NULL)::text || '|count=' || COUNT(*) FROM transactions GROUP BY status,type,execution_mode,(timestamp_awaiting_finalization IS NULL),(blocked_at IS NOT NULL),(to_address IS NULL) ORDER BY status;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'TX_AGE|status=' || status || '|since_accepted=' || round((EXTRACT(EPOCH FROM clock_timestamp()) - timestamp_awaiting_finalization)::numeric,0) || '|blocked_for=' || round(EXTRACT(EPOCH FROM (clock_timestamp()-blocked_at))::numeric,0) || '|appeal_deadline_delta=' || COALESCE(round((NULLIF(consensus_history->'latestDecision'->>'appealDeadline','')::numeric - EXTRACT(EPOCH FROM clock_timestamp()))::numeric,0)::text,'missing') FROM transactions WHERE status='ACCEPTED' ORDER BY created_at DESC LIMIT 3;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'RESOLVE_CONSENSUS|status=' || status || '|type=' || type || '|validator_entries=' || CASE WHEN jsonb_typeof(consensus_data::jsonb->'validators')='array' THEN jsonb_array_length(consensus_data::jsonb->'validators')::text ELSE 'NA' END || '|votes_type=' || COALESCE(jsonb_typeof(consensus_data::jsonb->'votes'),'missing') FROM transactions WHERE type=2 ORDER BY created_at DESC LIMIT 1;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
+          docker exec cg123ci-postgres-1 psql -U postgres -d genlayer_state -At \
+            -c "SELECT 'LIFECYCLE|total=' || count(*) || '|finalized=' || count(*) FILTER (WHERE status='FINALIZED') || '|unfinalized=' || count(*) FILTER (WHERE status!='FINALIZED') || '|write_calls=' || count(*) FILTER (WHERE type=2) FROM transactions;" \
+            >> /tmp/cg-safe-tx-status.txt 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('/tmp/cg-safe-tx-status.txt')
+          lines=p.read_text(errors='replace').splitlines() if p.exists() else []
+          safe=[s for s in lines if re.fullmatch(r'(?:TX_(?:STATE|DETAIL|AGE)|RESOLVE_CONSENSUS|LIFECYCLE)\|[A-Za-z0-9_|=.-]{1,240}',s)]
+          p.write_text('\n'.join(safe or ['DB_STATUS_UNAVAILABLE'])+'\n', encoding='utf-8')
+          for l in safe: print('SAFE_DB:',l)
+          PY
+      - name: Identify finalization stage from worker event classes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker compose -p "$PROJECT" -f "$COMPOSE" logs --no-color consensus-worker > /tmp/cg-private-worker-timeline.log 2>&1
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          src=Path('/tmp/cg-private-worker-timeline.log')
+          lines=src.read_text(errors='replace').splitlines() if src.exists() else []
+          categories={
+            'finalization_started': r'Finalizing transaction',
+            'finalization_done': r'Successfully finalized transaction',
+            'finalization_not_ready': r'not ready for finalization',
+            'finalization_accepted_repair': r'Repairing accepted message delivery',
+            'finalization_error': r'error during finalization|Failed to release finalization',
+            'worker_task_failed': r'Task failed',
+            'worker_recovery': r'Recovered [0-9]+ stuck transactions',
+            'worker_started': r'Starting consensus worker',
+          }
+          result=[]
+          for key, pattern in categories.items():
+              matches=[line for line in lines if re.search(pattern,line,re.I)]
+              result.append('WORKER_STAGE|'+key+'|count='+str(len(matches)))
+          output=Path('/tmp/cg-safe-worker-stages.txt')
+          output.write_text('\n'.join(result)+'\n',encoding='utf-8')
+          for row in result: print('STUDIO_SAFE_WORKER:',row)
+          PY
+      - name: Publish sanitized phase-six complete Studio proof on isolated audit branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          src = Path('/tmp/cg-private-pytest.log')
+          lines = src.read_text(errors='replace').splitlines() if src.exists() else []
+          output = [
+              '# ConsensusGuard phase six: complete real local Studio integration audit',
+              '',
+              'GitHub Actions run: ' + os.environ.get('GITHUB_RUN_ID', 'unknown'),
+              'Test scope: five validator resolve and appeal; genuine dissent/rollback/recovery; six-validator leader rotation.',
+              'No validator identities, configs, secrets or raw receipts included; local Studio only, not public Dev.',
+              '',
+              '## Safe phase and transaction status checkpoints',
+          ]
+          phases = {'VALIDATORS_READY','FEES_QUOTED','DEPLOY_START','DEPLOY_DONE',
+                    'DEPLOY_FINALIZED','OPEN_RECEIPT','PHASE1_OPEN_CASE_PASS',
+                    'FIVE_DISTINCT_REGISTERED_VALIDATORS','FIVE_VALIDATOR_MOCKS_READY',
+                    'RESOLVE_START','RESOLVE_FINALIZED','FIVE_VALIDATOR_QUORUM_VERIFIED','FIVE_VALIDATOR_RESOLVE_PASS',
+                    'APPEAL_VALIDATORS_READY','APPEAL_START','APPEAL_FINALIZED',
+                    'APPEAL_QUORUM_VERIFIED','APPEAL_HISTORY_VERIFIED','FULL_APPEAL_LIFECYCLE_PASS',
+                    'REGISTERED_MOCK_1','REGISTERED_MOCK_2','REGISTERED_MOCK_3',
+                    'REGISTERED_MOCK_4','REGISTERED_MOCK_5'}
+          pattern = re.compile(r'STUDIO_SAFE_WAIT_(START|DONE|FAILURE): (0x[0-9a-fA-F]{64}) status= ([A-Za-z_0-9]+)(?: (?:target|exception)= ([A-Za-z_0-9]+))?')
+          for l in lines:
+              if 'STUDIO_PHASE:' in l:
+                  phase = l.partition('STUDIO_PHASE:')[2].strip()
+                  if phase in phases:
+                      output.append('- PHASE: ' + phase)
+              match = pattern.search(l)
+              if match:
+                  output.append('- WAIT_' + match[1] + ': ' + match[2] + ' status=' + match[3] + ' ' + str(match[4] or ''))
+          output.extend(['', '## Resolve outcome (restricted enum and marker fields)'])
+          for line in lines:
+              if line.startswith(("STUDIO_RESOLVE_SAFE:", "STUDIO_RESOLVE_ERROR_MARKERS:",
+                                  "STUDIO_RESOLVE_SAFE_CASE_STATE:",
+                                   "STUDIO_RESOLVE_VM_KIND:",
+                                   "STUDIO_RESOLVE_VM_ERROR_COUNT:",
+                                   "STUDIO_RESOLVE_VM_ERROR:")):
+                  output.append('- ' + line[:300])
+          for line in lines:
+              if line.startswith(("PHASE4_", "STUDIO_PHASE5_")):
+                  if not any(k in line.lower() for k in ('private_key','node_config','secret','password','api_key')):
+                      output.append('- ' + line[:360])
+          for line in lines:
+              if line.startswith(("STUDIO_SAFE_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_VOTE_COUNTS:",
+                                   "STUDIO_SAFE_APPEAL_RESULT:",
+                                   "STUDIO_PHASE5_IDLE_PROOF:", "STUDIO_PHASE5_COMPLETE:")):
+                  output.append('- ' + line[:220])
+          dbpath=Path('/tmp/cg-safe-tx-status.txt')
+          output.extend(['','## Local transaction state summaries'])
+          if dbpath.exists():
+              output.extend(['- '+line for line in dbpath.read_text().splitlines() if line.startswith(('TX_STATE|','TX_DETAIL|','TX_AGE|','RESOLVE_CONSENSUS|','LIFECYCLE|','DB_STATUS_UNAVAILABLE'))])
+          event_path=Path('/tmp/cg-safe-worker-stages.txt')
+          output.extend(['', '## Worker stages (counts only)'])
+          if event_path.exists():
+              output.extend(['- '+line for line in event_path.read_text().splitlines() if line.startswith('WORKER_STAGE|')])
+          output.extend([
+              '', '## Result',
+              'PASS' if any('STUDIO_PHASE: FULL_APPEAL_LIFECYCLE_PASS' in l for l in lines)
+                        and any('PHASE4_COMPLETE: REAL_STUDIO_DISAGREEMENT_ROLLBACK_RECOVERY_PASS' in l for l in lines)
+                        and any('PHASE4_ROTATION_COMPLETE: REAL_STUDIO_SPARE_VALIDATOR_ROTATION_ROLLBACK_RECOVERY_PASS' in l for l in lines)
+                        and sum(l.startswith('STUDIO_PHASE5_IDLE_PROOF:') for l in lines) == 2
+                        and any('STUDIO_PHASE5_COMPLETE: RESOLVE_AND_APPEAL_TWO_IDLE_CAUSE_PROVEN' in l for l in lines)
+                        and any(re.search(r'\b3 passed\b', l) for l in lines)
+              else 'NOT YET CONFIRMED / FAILED',
+          ])
+          target = Path('evidence/audit-studio-phase6-full-' + os.environ.get('GITHUB_RUN_ID', 'unknown') + '.md')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text('\n'.join(output) + '\n', encoding='utf-8')
+          print('Safe diagnostic file generated:', target)
+          PY
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add evidence/audit-studio-phase6-full-*.md
+          if git diff --cached --quiet; then
+            echo "No new audit diagnostics"; exit 0
+          fi
+          git commit -m "evidence(audit): record phase-six complete local Studio proof"
+          git fetch origin audit/phase6-full-security-regression-20261014
+          git rebase origin/audit/phase6-full-security-regression-20261014
+          git push origin HEAD:audit/phase6-full-security-regression-20261014
+      - name: Stop and remove ONLY disposable audit containers (preserve nothing)
+        if: always()
+        run: docker compose -p "$PROJECT" -f "$COMPOSE" down --remove-orphans || true
