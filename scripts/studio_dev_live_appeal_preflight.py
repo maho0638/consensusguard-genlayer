@@ -20,6 +20,7 @@ def unwrap(res):
 def main():
     from genlayer_py import create_client, create_account
     from genlayer_py.chains import studio_devnet
+    from genlayer_py.types import TransactionHashVariant
     # Read-only ephemeral call identity: no submission, funding or transaction signing.
     client = create_client(chain=studio_devnet, account=create_account())
     lines = [
@@ -34,13 +35,13 @@ def main():
     ]
     stage = "sdk-read_case"
     try:
-        case = unwrap(client.read_contract(address=CONTRACT, function_name="get_case",args=[0]))
+        case = unwrap(client.read_contract(address=CONTRACT, function_name="get_case",args=[0],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL))
         stage = "sdk-read_latest_decision"
-        decision = unwrap(client.read_contract(address=CONTRACT,function_name="get_latest_decision",args=[0]))
+        decision = unwrap(client.read_contract(address=CONTRACT,function_name="get_latest_decision",args=[0],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL))
         stage = "sdk-read_case_count"
-        case_count = client.read_contract(address=CONTRACT,function_name="case_count",args=[])
+        case_count = client.read_contract(address=CONTRACT,function_name="case_count",args=[],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL)
         stage = "sdk-read_decision_count"
-        decision_count = client.read_contract(address=CONTRACT,function_name="decision_count",args=[])
+        decision_count = client.read_contract(address=CONTRACT,function_name="decision_count",args=[],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL)
         stage = "sdk-get_transaction"
         historic = client.get_transaction(hash=ORIGINAL_RESOLVE_TX)
         if not isinstance(historic,dict): historic={}
@@ -59,8 +60,8 @@ def main():
         if case.get("state")=="APPEALED" and case.get("appeal_used") is True and int(case.get("latest_decision_id",-1)) == 1:
             lines+=["","**LIVE STUDIO DEV APPEAL IS ALREADY ONCHAIN.** Verify decision 0 and 1 to complete."]
             print("APPEAL_LIVE_STATE: ALREADY_APPEALED",flush=True)
-            old=unwrap(client.read_contract(address=CONTRACT,function_name="get_decision",args=[0]))
-            new=unwrap(client.read_contract(address=CONTRACT,function_name="get_decision",args=[1]))
+            old=unwrap(client.read_contract(address=CONTRACT,function_name="get_decision",args=[0],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL))
+            new=unwrap(client.read_contract(address=CONTRACT,function_name="get_decision",args=[1],transaction_hash_variant=TransactionHashVariant.LATEST_FINAL))
             verified=(old.get("outcome")=="VERIFIED" and old.get("round")==0 and new.get("round")==1 and old.get("manifest_sha256") != new.get("manifest_sha256"))
             lines+=["- Append-only previous decision retained and new manifest committed: "+str(verified)]
             print("APPEAL_APPEND_ONLY_VALID: "+str(verified),flush=True)
