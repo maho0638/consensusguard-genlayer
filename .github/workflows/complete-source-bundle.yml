@@ -69,7 +69,7 @@ jobs:
           print('COMPLETE_SOURCE_PACKAGE_OK files=',len(entries),'commit=',commit)
           PY
       - name: Upload single source/evidence artifact ZIP (no secrets, no private test receipt)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # verified v4 ref
         with:
           name: ConsensusGuard_FULL_SOURCE_970a763_67tests
           path: package/
