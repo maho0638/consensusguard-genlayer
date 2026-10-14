@@ -300,20 +300,37 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     )
     assert counts["agree"] >= 3, "Five-validator majority requires at least three agree votes"
     assert counts["agree"] + counts["idle"] == 5
-    idle_receipts = [
-        receipt for receipt in independent_receipts
-        if isinstance(receipt, dict) and
-        str(receipt.get("vote", "")).lower() == "idle"
-    ]
-    assert len(idle_receipts) == counts["idle"], (
-        "Missing synthetic idle receipts for early quorum cancellations"
+    # Studio may put the first revalidation receipt in leader_receipt[1],
+    # including when this revalidation gets cancelled as quorum is reached.
+    # Match every idle *address* across BOTH receipt locations. This is
+    # deterministic despite which asynchronous validator completes first.
+    first_leader_history = consensus.get("leader_receipt", []) or []
+    assert isinstance(first_leader_history, list) and len(first_leader_history) in (1, 2)
+    all_first_receipts = list(independent_receipts) + first_leader_history[1:]
+    first_idle_addresses = {
+        str(addr).lower() for addr, vote in observed_votes.items()
+        if str(vote).lower() == "idle"
+    }
+    first_idle_by_address = {}
+    for receipt in all_first_receipts:
+        if not isinstance(receipt, dict):
+            continue
+        if str(receipt.get("vote", "")).lower() != "idle":
+            continue
+        node = receipt.get("node_config")
+        assert isinstance(node, dict), "First-round IDLE receipt lacks validator identity"
+        address = str(node.get("address", "")).lower()
+        assert address in first_idle_addresses
+        assert address not in first_idle_by_address, "First-round IDLE receipt duplicated"
+        first_idle_by_address[address] = receipt
+    assert set(first_idle_by_address) == first_idle_addresses, (
+        "Not all early-quorum IDLE voters have matching first-round receipts"
     )
     assert all(
-        isinstance(receipt.get("genvm_result"), dict) and
-        receipt["genvm_result"].get("error_code") ==
-            "CONSENSUS_VALIDATOR_QUORUM_REACHED"
-        for receipt in idle_receipts
-    ), "IDLE must be proven to result from early quorum, not infrastructure failure"
+        isinstance(r.get("genvm_result"), dict) and
+        r["genvm_result"].get("error_code") == "CONSENSUS_VALIDATOR_QUORUM_REACHED"
+        for r in first_idle_by_address.values()
+    ), "IDLE must be attributable to early quorum, never unproven infrastructure failure"
     print("STUDIO_PHASE: FIVE_VALIDATOR_QUORUM_VERIFIED", flush=True)
 
     case = json.loads(contract.get_case(args=[case_id]).call())
