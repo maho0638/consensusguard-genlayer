@@ -438,8 +438,8 @@ def test_text_mode_classifier_rejects_duplicate_json_keys_and_preserves_state(
     # Text-mode LLM responses must still undergo strict JSON validation.
     # Conflicting duplicate 'labels' values can never silently override
     # a prior value or commit an ambiguous verdict.
-    direct_vm.mock_web(URL_A.replace(".", r"\\."), {"status": 200, "body": BODY_A.decode()})
-    direct_vm.mock_web(URL_B.replace(".", r"\\."), {"status": 200, "body": BODY_B.decode()})
+    direct_vm.mock_web(URL_A.replace(".", r"\."), {"status": 200, "body": BODY_A.decode()})
+    direct_vm.mock_web(URL_B.replace(".", r"\."), {"status": 200, "body": BODY_B.decode()})
     direct_vm.mock_llm(
         r"evidence classifier inside a smart contract",
         '{"labels":["SUPPORTS","SUPPORTS"],"labels":["REFUTES","REFUTES"]}',
