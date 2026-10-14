@@ -18,9 +18,10 @@ def unwrap(res):
     raise RuntimeError(f"Read returned unexpected type: {type(res).__name__}")
 
 def main():
-    from genlayer_py import create_client
+    from genlayer_py import create_client, create_account
     from genlayer_py.chains import studio_devnet
-    client = create_client(chain=studio_devnet)
+    # Read-only ephemeral call identity: no submission, funding or transaction signing.
+    client = create_client(chain=studio_devnet, account=create_account())
     lines = [
         "# Studio Dev existing contract read-only appeal preflight",
         "",
