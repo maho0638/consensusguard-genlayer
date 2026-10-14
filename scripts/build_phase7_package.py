@@ -336,8 +336,23 @@ print("SHA256_ALL_FILES_PASS",len(files),"commit",metadata["source_git_commit"])
     save_text(destination / "SHA256_MANIFEST.json",
               json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)+"\n")
     count, total = check_manifest(destination)
-    if count < len(tracked) + len(CHECKS) + 7:
-        raise RuntimeError("Handoff omitted required control files")
+    required_controls = {
+        "CURRENT_TEST_RESULTS/QA_SUMMARY.json",
+        "VERIFIED_CI/RUNS_VERIFIED.json",
+        "VERIFIED_CI/PROVENANCE.json",
+        "START_HERE_TR.txt",
+        "FINAL_RELEASE_DECISION_TR.md",
+        "verify_sha256.py",
+    }
+    listed = json.loads((destination / "SHA256_MANIFEST.json").read_text("utf-8"))["files"]
+    missing_controls = required_controls - set(listed)
+    if missing_controls:
+        raise RuntimeError("Handoff controls missing: " + ", ".join(sorted(missing_controls)))
+    expected_count = len(tracked) + len(CHECKS) + len(required_controls)
+    if count != expected_count:
+        raise RuntimeError(
+            f"Handoff inventory count mismatch: actual={count} expected={expected_count}"
+        )
     print("PHASE7_ALL_SHA256_PASS count=",count,"bytes=",total)
     print("PHASE7_GIT_SOURCE=",head)
     print("PHASE7_SOURCE_TRACKED=",len(tracked))
