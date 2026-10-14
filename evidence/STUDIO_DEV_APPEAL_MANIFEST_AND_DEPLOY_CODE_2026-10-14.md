@@ -1,6 +1,6 @@
 # Studio Dev original deployed-code comparison and signed appeal preparation
 
-Run: https://github.com/maho0638/consensusguard-genlayer/actions/runs/38574091907
+Run: https://github.com/maho0638/consensusguard-genlayer/actions/runs/38574439443
 
 All checks here are GET/JSON-RPC read-only; no wallet, GEN spend or transactions.
 
@@ -21,6 +21,11 @@ All checks here are GET/JSON-RPC read-only; no wallet, GEN spend or transactions
 
 ## Historical deployed code
 - Studio Dev deployed code fetch unavailable: HTTPError
+- Explorer direct deployed source accessible: YES
+- Explorer deployed source SHA-256: \`266f39aa6902a43868509e05f56fe6aaae712eaae527ca6f0afe372dd3c69207\`
+- Current audited source SHA-256: \`bcf15ef524a1b108480e3ab8a178d0b2ff561440b9de930ea949344cdc1f0a0f\`
+- Deployed source exactly equals latest local audit: **False**
+- Explorer deployed source bytes: 24977; local bytes: 25578
 
 ## Signer and network boundary
 1. The smart contract is requester-only and *only* the account that opened case 0 can sign a valid \`appeal\`.

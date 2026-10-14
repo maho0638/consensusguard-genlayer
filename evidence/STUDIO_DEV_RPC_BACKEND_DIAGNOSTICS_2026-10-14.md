@@ -1,6 +1,6 @@
 # 2026-10-14 Studio Dev RPC diagnostic — all read only
 
-CI: https://github.com/maho0638/consensusguard-genlayer/actions/runs/38574091907
+CI: https://github.com/maho0638/consensusguard-genlayer/actions/runs/38574439443
 Studio Dev canonical RPC chain expected: 61997. No writes, wallet, test GEN or contract deploy.
 
 ## Safe observations
