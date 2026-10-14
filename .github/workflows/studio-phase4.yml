@@ -289,7 +289,7 @@ jobs:
                   line=re.sub(r'0x[0-9a-fA-F]{64}', lambda m:m.group(0), line)
                   if not re.search(r'(?:password|private.key|secret|apikey|token|node_config)',line,re.I):
                       records.append(line[:350])
-          passed=any('PHASE4_COMPLETE: REAL_STUDIO_DISAGREEMENT_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any('PHASE4_ROTATION_COMPLETE: REAL_STUDIO_SPARE_VALIDATOR_ROTATION_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any(re.search(r'\b1 passed\b',line) for line in lines)
+          passed=any('PHASE4_COMPLETE: REAL_STUDIO_DISAGREEMENT_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any('PHASE4_ROTATION_COMPLETE: REAL_STUDIO_SPARE_VALIDATOR_ROTATION_ROLLBACK_RECOVERY_PASS' in line for line in lines) and any(re.search(r'\b2 passed\b',line) for line in lines)
           out=['# Phase 4 — independent local Studio 5-validator disagreement and rollback',
                '', 'CI run: '+os.environ.get('GITHUB_RUN_ID','unknown'),
                'CI head SHA: '+os.environ.get('GITHUB_SHA','unknown'),
