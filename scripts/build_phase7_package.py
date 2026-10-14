@@ -23,6 +23,7 @@ SOURCE_CONTRACT_BLOB = "ca4df13afea4accc90e858aab5f71cb420242c57"
 CI_RUNS = {
     "phase6_full_studio": (38555170256, "3c0f5391431b5f8d0e0ae6ca57a716ced047b359"),
     "phase6_quality_last_report": (38557260290, EXPECTED_BASE),
+    "studio_dev_signed_receipts_readonly": (38583016128, "5058c5be46763e7b0bdb0fb6b411e64ef70b3946"),
     "phase6_dependency_advisories": (38555288470, "c16a85395e9a473c430e367f30fc6f182ca5f0e6"),
     "phase5_studio_dev_historical_read": (38553677412, "d65eed9a7899ba5b221822b5fccd5c7c34e90ba4"),
     "phase5_local_studio": (38532431448, "f3178399cc1a9e435dd75dabe7a4c86f9065ea46"),
@@ -41,6 +42,9 @@ REQUIRED_EVIDENCE = [
     "evidence/PHASE6_FINAL_SECURITY_REGRESSION_2026-10-14.md",
     "evidence/phase6-dependency-audit-38555288470.md",
     "evidence/studio-dev-live-validation.md",
+    "evidence/STUDIO_DEV_PHASE7_SIGNED_APPEAL_2026-10-14.md",
+    "evidence/STUDIO_DEV_SIGNED_APPEAL_RECEIPT_INDEPENDENT_AUDIT_2026-10-14.md",
+    "evidence/STUDIO_DEV_SIGNED_APPEAL_FINAL_VERDICT_2026-10-14.md",
     "requirements-lock.txt",
     "contracts/consensus_guard.py",
     "tests/test_consensus_guard.py",
@@ -129,7 +133,7 @@ def check_manifest(folder: Path) -> tuple[int, int]:
 def build(qa: Path, destination: Path) -> None:
     head = git("rev-parse", "HEAD")
     branch = git("symbolic-ref", "--short", "HEAD")
-    if branch != "audit/phase7-final-delivery-20261014":
+    if branch != "audit/studio-dev-real-appeal-20261014":
         raise RuntimeError("Unexpected branch; refuse handoff")
     if git("rev-parse", f"{EXPECTED_BASE}^{{commit}}") != EXPECTED_BASE:
         raise RuntimeError("Known phase-six base missing")
@@ -198,6 +202,25 @@ def build(qa: Path, destination: Path) -> None:
         if val not in deps:
             raise RuntimeError("Dependency security proof invalid")
 
+    # The new latest-source signed Studio Dev appeal was validated by an
+    # independent read-only consensus receipt/source SHA-256 audit. Fail closed
+    # if that new evidence is missing or falsely claims storage readback PASS.
+    signed = (ROOT / "evidence/STUDIO_DEV_SIGNED_APPEAL_RECEIPT_INDEPENDENT_AUDIT_2026-10-14.md").read_text()
+    for needle in (
+        "Deployed source EXACT match: **True**",
+        "FINISHED_WITH_RETURN and FINALIZED count: 4/4",
+        'appeal: status=FINALIZED, execution=FINISHED_WITH_RETURN',
+        "All four strong receipt gates pass: **True**",
+    ):
+        if needle not in signed:
+            raise RuntimeError("Latest Studio Dev signed appeal proof missing: " + needle)
+    finaldev = (ROOT / "evidence/STUDIO_DEV_SIGNED_APPEAL_FINAL_VERDICT_2026-10-14.md").read_text()
+    if "readback remains BLOCKED" not in finaldev:
+        raise RuntimeError("Latest report must explicitly distinguish unavailable state readback")
+    latest_test = (ROOT / "evidence/STUDIO_DEV_PHASE7_SIGNED_APPEAL_2026-10-14.md").read_text()
+    if "- appeal finalized successfully" not in latest_test:
+        raise RuntimeError("Original fresh Studio Dev appeal finalization proof absent")
+
     run_proofs = fetch_verified_runs()
     source_root = destination / "SOURCE_CODE"
     for rel in tracked:
@@ -245,58 +268,67 @@ def build(qa: Path, destination: Path) -> None:
     )
     save_text(
         destination / "START_HERE_TR.txt",
-        "CONSENSUSGUARD - TEK ZIP, EN GUNCEL DOGRULANMIS KAYNAK TESLIMI\n"
-        f"Github: https://github.com/{REPO}/tree/{head}\n"
-        f"TAM KAYNAK COMMIT: {head}\n"
-        "Kaynaklar: SOURCE_CODE/ (tum izlenen dosyalar, binary SDK ve tum evidence dahil)\n"
-        "Son testler: CURRENT_TEST_RESULTS/ (98+ basarili; 3 gercek Studio testi ayri)\n"
-        "Dogulanmis CI: VERIFIED_CI/RUNS_VERIFIED.json\n"
-        "Dosya dogrulama: SHA256_MANIFEST.json; verify_sha256.py\n"
-        "Gercek yerel Studio kaniti: SOURCE_CODE/evidence/audit-studio-phase6-full-38555170256.md\n"
-        "12 Studio islemi sonlandirildi, kontrat state/rollback ayrica dogrulandi.\n"
-        "Tarihsel Studio Dev idle makbuzu: SOURCE_CODE/evidence/historical-studio-dev-idle-readonly-38553677412.md\n"
-        "DURUM: Paketin teknik teslimi tamam. Kamuya/Portal'a GONDERIME HAZIR DEGIL.\n"
-        "Neden: Studio Dev uzerinde GERCEK appeal ve sonrasindaki durum gecisleri\n"
-        "eski kayitta kanitli degil; bu islem sadece yerel Studio'da dogrulandi.\n"
-        "Bu ZIP'e eski 66/67-testlik kaynaktan yeni teslim diye veri konulmadi.\n"
-        "Bu paket eskinin kopyasi DEGIL, bu anki git HEAD kaynagidir.\n"
+        "CONSENSUSGUARD — GUNCEL KAYNAK VE GERCEK STUDIO DEV APPEAL KANITLARI\n"
+        f"GitHub: https://github.com/{REPO}/tree/{head}\n"
+        f"Kaynak commit: {head}\n"
+        "SOURCE_CODE/ klasoru tum izlenen kaynak, evidence ve CI is akislarini icerir.\n"
+        "VERIFIED_CI/ gercek basarili is akislarinin canli GitHub durum kanitidir.\n"
+        "CURRENT_TEST_RESULTS/ 98+ test ve lint/SDK/typecheck kanitlarini icerir.\n"
+        "GUNCEL STUDIO DEV: dort imzali islem, deploy/open_case/resolve/appeal,\n"
+        "tum islem makbuzlari FINALIZED + FINISHED_WITH_RETURN, 3/5 validator onay.\n"
+        "Kaniti: SOURCE_CODE/evidence/STUDIO_DEV_SIGNED_APPEAL_FINAL_VERDICT_2026-10-14.md\n"
+        "AYRI SINIR: Studio Dev gen_call sunucusunda SQLAlchemy DB hatasi var;\n"
+        "get_case/get_decision uzerinden bagimsiz state readback henuz mumkun degil.\n"
+        "SHA256_MANIFEST.json ve verify_sha256.py tum dosyalari dogrular.\n"
+        "PORTAL GONDERIMI YAPILMADI. Main veya Vercel degismedi.\n"
     )
     save_text(
         destination / "FINAL_RELEASE_DECISION_TR.md",
-        f"""# ConsensusGuard — Faz 7 Teslim ve Gönderim Kararı
+        f"""# ConsensusGuard — Tek ZIP ve son dogrulama (2026-10-14)
 
-**Teslim paketi: TAMAMLANDI (tek ZIP).**
-**Portal'a / kamuya gönderim kararı: HAZIR DEĞİL.**
+**Tek ZIP teslimi: TAMAMLANDI.**
+**Gerçek Studio Dev imzalı appeal: PASS.**
+**GenLayer Portal / kamuya gönderim: HAZIR DEĞİL; ayrı son state readback sunucuda engellendi.**
 
-## Bağımsız doğrulanan
-- Tam GitHub kaynak ağacı: {head}, **{len(tracked)} izlenen dosya**.
-- Mevcut sözleşme üretim kodu değişmedi: Git blob \`{SOURCE_CONTRACT_BLOB}\`.
-- Son çalışma: **{m.group(1)} passed, {m.group(2)} skipped** (3 ayrı gerçek Studio testidir).
-- Gerçek Studio entegrasyonu: üç PASS senaryosu, 12 yerel işlem, rollback ve lider değişimi.
-- Studio Dev 2026-10-12 tarihli **gerçek resolve** işlemi ve 2 IDLE nedeni doğrulandı.
-- 67 kilitli bağımlılıkta bilinen uyarı: sıfır.
-- Her dosya için boyut ve SHA-256 \`SHA256_MANIFEST.json\` içindedir.
-- Canlı zincire yeni işlem gönderilmedi, portal gönderimi ve main merge yapılmadı.
+## Kanıtlanan teknik koşular
 
-## Gönderime hazır olmama nedeni
-Orijinal denetimin istediği **Studio Dev üzerinde gerçek appeal ve
-sonraki durum geçişleri** için kamu ağına ait imzalı başarı makbuzu
-bulunmuyor. Faz 3 ve Faz 6'daki appeal/rollback testleri gerçek
-**yerel Studio consensus** işlemleridir; bunlar Studio Dev appeal kanıtının
-yerini tutmaz. Bu ayrım gizlenmemiştir.
+- Kaynak: `{head}`; **{len(tracked)} tam izlenen dosya**.
+- Üretim kontrat kodu Git blob: `{SOURCE_CONTRACT_BLOB}`.
+- Direct Mode ve güvenlik regresyonu: **{m.group(1)} PASS, {m.group(2)} lokal Studio ayrı çalıştırılmış SKIP**.
+- Gerçek yerel Studio entegrasyonu: üç PASS senaryosu, 12 FINALIZED işlem;
+  anlaşmazlık, rollback, rotasyon ve appeal.
+- Studio Dev eski imzalı işlem kaydındaki 2 IDLE'ın nedeni doğrulandı.
+- **YENİ gerçek Studio Dev 61997:** Yeni kontrat deploy, open_case, resolve,
+  appeal; dört özgün imzalı işlem `FINALIZED + FINISHED_WITH_RETURN`.
+- Yeni deploy'un kaynak SHA-256 değeri GitHub sözleşmesiyle **birebir eşleşti**.
+- Gerçek appeal: 3 agree / 1 disagree / 1 idle, başarılı kabul edilmiş tam consensus.
+- Gerçek işlem dökümü: `SOURCE_CODE/evidence/STUDIO_DEV_PHASE7_SIGNED_APPEAL_2026-10-14.md`.
+- Bağımsız makbuzlar ve SHA-256:
+  `SOURCE_CODE/evidence/STUDIO_DEV_SIGNED_APPEAL_RECEIPT_INDEPENDENT_AUDIT_2026-10-14.md`.
+- İlgili CI başarı kaydı:
+  https://github.com/maho0638/consensusguard-genlayer/actions/runs/38583016128
+- İlk dört gerçek işlem zincirde başarıyla sonuçlandı, fakat ilk E2E CI koşusu
+  yalnızca son readback kapısında başarısız olarak raporlandı. Bu olgu gizlenmedi.
+- 67 kilitli bağımlılık; sıfır bilinen güvenlik uyarısı.
+- ZIP `SHA256_MANIFEST.json` içindeki bütün dosyalar tekrar hesaplanarak doğrulanır.
 
-Dış kaynakların gerçekliği, bağımsız yayıncı kimliği ve DNS yönlendirme
-güvenliği hash eşleşmesiyle kanıtlanamaz; LLM sınıflandırma doğruluğu ve
-prompt-injection direnci de matematiksel garanti değildir.
+## Eksik olan, sözleşme işlem hatası olmayan kontrol
 
-## Sonraki onay kapısı
-Studio Dev'deki hedef sözleşmede \`appeal\` işlemini uygun test cüzdanı
-ile gerçekleştirip FINALIZED kaydı, consensus ve kontrat read-back üzerinden
-\`DECIDED → APPEALED\` ve önceki kararın değişmediği kanıtlanmalıdır.
-Başarılı olmadan \"GÖNDERİME HAZIR\" demeyin.
+GenLayer'ın barındırdığı Studio Dev `gen_call` endpoint'i hâlâ `-32603`
+SQLAlchemy oturumunda geri alma hatası veriyor. Bu nedenle gerçek kontratın
+`get_case(0)`, `get_decision(0/1)` ve `decision_count()` JSON readback
+sonuçları erişilemiyor. Gerçek imzalı ve başarılı `appeal` makbuzu
+`PASS` olsa da bu **ayrı readback doğrulaması PASS değildir.**
+Kontrat kaynak kodundan başarılı `appeal` sonucunun `APPEALED` state'i
+ve ikinci değişmez karar kaydı yazması beklenir; bu doğrudan storage okuması
+ile **ayrıca kanıtlanmış değildir**.
 
-**Bu ZIP oluşturma işi Faz 7 kapsamındadır; testnet işlemi başlatma,
-GitHub main merge, Vercel deploy veya Portal gönderimi değildir.**
+Studio Dev sunucusu düzeldikten sonra bu kontrat adresinden salt-okunur
+`get_case(0)`, `get_decision(0)`, `get_decision(1)` ve
+`decision_count()` okunup state ve değişmezlik tekrar doğrulanmalıdır.
+Bunun için yeni deploy, GEN harcaması veya başka imzalı itiraz gerekmez.
+
+**GitHub main değişmedi; Vercel ve Portal'a dokunulmadı.**
 """
     )
     verifier = r'''#!/usr/bin/env python3
@@ -356,7 +388,7 @@ print("SHA256_ALL_FILES_PASS",len(files),"commit",metadata["source_git_commit"])
     print("PHASE7_ALL_SHA256_PASS count=",count,"bytes=",total)
     print("PHASE7_GIT_SOURCE=",head)
     print("PHASE7_SOURCE_TRACKED=",len(tracked))
-    print("PHASE7_ZIP_RELEASE_GATE=HAZIR_DEGIL_STUDIO_DEV_APPEAL_UNVERIFIED")
+    print("PHASE7_ZIP_RELEASE_GATE=SIGNED_STUDIO_DEV_APPEAL_PASS_READBACK_BLOCKED")
     print("PHASE7_READY_TO_UPLOAD_SINGLE_ARTIFACT_DIRECTORY")
 
 
