@@ -1,0 +1,80 @@
+name: Phase 6 dependency security scan
+on:
+  push:
+    branches: [audit/phase6-full-security-regression-20261014]
+    paths:
+      - '.github/workflows/phase6-dependency-security.yml'
+      - 'requirements-lock.txt'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Scan complete pinned dependency list with PyPI advisories
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pip-audit
+          set +e
+          python -m pip_audit -r requirements-lock.txt --format=json --no-deps --disable-pip > /tmp/cg-pip-audit.json 2> /tmp/cg-pip-audit-error.txt
+          audit_code=$?
+          set -e
+          echo "$audit_code" > /tmp/cg-pip-audit-exit.txt
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          output=['# Phase 6 — pinned dependency known-vulnerability audit','','CI: https://github.com/maho0638/consensusguard-genlayer/actions/runs/'+os.environ.get('GITHUB_RUN_ID','unknown'),
+                  'Input: requirements-lock.txt; pip-audit advisory lookup; no application secrets or source files transmitted.']
+          exit_code=int(Path('/tmp/cg-pip-audit-exit.txt').read_text().strip())
+          try:
+              raw=json.loads(Path('/tmp/cg-pip-audit.json').read_text())
+              dependencies=raw.get('dependencies',[]) if isinstance(raw,dict) else []
+              issues=[]
+              for dep in dependencies:
+                  if not isinstance(dep,dict):continue
+                  name=dep.get('name','')
+                  ver=dep.get('version','')
+                  if not re.fullmatch(r'[A-Za-z0-9_.-]{1,90}',name):continue
+                  for finding in dep.get('vulns',[]):
+                      if not isinstance(finding,dict):continue
+                      vuln_id=finding.get('id','')
+                      if not re.fullmatch(r'[A-Za-z0-9_:-]{1,90}',vuln_id):continue
+                      issues.append((name,ver,vuln_id))
+              status='PASS' if exit_code==0 and not issues else ('FINDINGS' if issues else 'INCONCLUSIVE')
+              output.extend(['','Scanned installed version list entries: '+str(len(dependencies)),
+                             'Scanner exit: '+str(exit_code),'Known advisories: '+str(len(issues)),'Result: **'+status+'**'])
+              for name,ver,vuln_id in issues:
+                  output.append('- '+name+'=='+str(ver)[:30]+': '+vuln_id)
+          except (ValueError,TypeError,KeyError,UnicodeError) as exc:
+              status='INCONCLUSIVE'
+              output.extend(['','Scanner output could not be parsed: '+type(exc).__name__,
+                             'Scanner exit: '+str(exit_code), 'Result: **INCONCLUSIVE**'])
+          out=Path('evidence/phase6-dependency-audit-'+os.environ.get('GITHUB_RUN_ID','unknown')+'.md')
+          out.parent.mkdir(exist_ok=True)
+          out.write_text('\n'.join(output)+'\n',encoding='utf-8')
+          print('PHASE6_DEP_SCAN_STATUS:',status)
+          print('PHASE6_DEP_REPORT:',out)
+          print('PHASE6_DEP_COUNT:',len(dependencies) if 'dependencies' in locals() else 'NA')
+          print('PHASE6_ADVISORY_COUNT:',len(issues) if 'issues' in locals() else 'NA')
+          PY
+      - name: Publish sanitized audit in isolated branch
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add evidence/phase6-dependency-audit-*.md
+          if ! git diff --cached --quiet; then
+            git commit -m "evidence(audit): record pinned dependency advisory scan"
+            git fetch origin audit/phase6-full-security-regression-20261014
+            git rebase origin/audit/phase6-full-security-regression-20261014
+            git push origin HEAD:audit/phase6-full-security-regression-20261014
+          fi
