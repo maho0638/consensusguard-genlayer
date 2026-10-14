@@ -198,7 +198,7 @@ def test_studio_rotation_with_six_validator_pool():
     configured = replaced.get("result", [])
     assert isinstance(configured, list) and len(configured) == 6
     address_set = {str(c.get("address", "")).lower() for c in configured}
-    assert len(address_set) == 5
+    assert len(address_set) == 6
     assert int(local_client.provider.make_request("sim_countValidators", [])["result"]) == 6
     print("PHASE4_ROTATION_READY: five-member committee drawn from six validators with 2/2/2 conflicting responses", flush=True)
 
