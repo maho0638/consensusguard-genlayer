@@ -164,8 +164,20 @@ def build(qa: Path, destination: Path) -> None:
     for name in CHECKS:
         if not (qa / name).exists():
             raise RuntimeError(f"QA output {name} missing")
-    if not re.search(r'"errorCount"\s*:\s*0', (qa / "genvm_lint.log").read_text()):
-        raise RuntimeError("GenVM-lint error-count mismatch")
+    try:
+        genvm_result = json.loads((qa / "genvm_lint.log").read_text("utf-8"))
+    except (ValueError, UnicodeError):
+        raise RuntimeError("GenVM-lint output is not valid JSON")
+    if not (isinstance(genvm_result, dict) and genvm_result.get("ok") is True
+            and int(genvm_result.get("passed", -1)) >= 1):
+        raise RuntimeError("GenVM-lint PASS marker absent")
+    try:
+        pyright_result = json.loads((qa / "pyright.log").read_text("utf-8"))
+        pyright_errors = int(pyright_result["summary"]["errorCount"])
+    except (ValueError, TypeError, KeyError, UnicodeError):
+        raise RuntimeError("Pyright output lacks explicit error summary")
+    if pyright_errors != 0:
+        raise RuntimeError("Pyright reported type errors")
     if "No broken requirements found" not in (qa / "pip_check.log").read_text():
         raise RuntimeError("Pip dependency consistency not verified")
 
