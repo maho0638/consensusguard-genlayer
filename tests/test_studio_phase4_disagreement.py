@@ -281,17 +281,27 @@ def test_studio_disagreement_rollback_and_recovery():
     assert status in ("FINALIZED", "UNDETERMINED"), (
         "Transaction has not reached a terminal, independently checkable status"
     )
-    history = tx.get("consensus_history", {}) or {}
-    rounds = history.get("consensus_results", []) if isinstance(history, dict) else []
-    if not isinstance(rounds, list):
-        rounds = []
+    # get_transaction() returns the FULL localnet receipt. The SDK's
+    # wait_for_transaction_receipt(full_transaction=False) deliberately strips
+    # consensus_history and rotation_count from its simplified receipt.
+    # Check rotation proof from full JSON-RPC state instead of relying on the
+    # simplified transact() return above.
+    full_tx = local_client.get_transaction(transaction_hash=tx_hash)
+    assert isinstance(full_tx, dict), "No full on-chain transaction available"
+    history = full_tx.get("consensus_history", {}) or {}
+    assert isinstance(history, dict), "Full receipt has no consensus history"
+    rounds = history.get("consensus_results", [])
+    assert isinstance(rounds, list), "Unexpected consensus history structure"
     safe_rounds = [
         str(row.get("consensus_round", ""))[:50]
         for row in rounds if isinstance(row, dict)
     ]
     print("PHASE4_HISTORY_ROUNDS:", ",".join(safe_rounds), flush=True)
-    rotation = tx.get("rotation_count")
+    rotation = full_tx.get("rotation_count")
     print("PHASE4_ROTATION_COUNT:", rotation if isinstance(rotation, int) else "UNAVAILABLE", flush=True)
+    assert isinstance(rotation, int) and rotation >= 1, (
+        "Real leader rotation was not proven by the full Studio transaction"
+    )
     # Explicit round history, if returned, must not show a positive agreement.
     assert not any("Accepted" == n for n in safe_rounds), (
         "Conflict transaction history unexpectedly records a majority accept"
@@ -302,7 +312,7 @@ def test_studio_disagreement_rollback_and_recovery():
     assert counts["agree"] < 3, "Contradictory majority was unexpectedly committed"
     # Check actual ledger state, not only a receipt or Python model.
     after = json.loads(contract.get_case(args=[0]).call())
-    assert after == before, "UNDETERMINED transaction mutated persisted case"
+    assert after == before, "Dissent transaction mutated persisted case"
     assert contract.case_count().call() == 1
     assert contract.decision_count().call() == 0
     print("PHASE4_ROLLBACK_STATE: OPEN decisions=0 case_unchanged=true", flush=True)

@@ -293,7 +293,7 @@ jobs:
                '', 'CI run: '+os.environ.get('GITHUB_RUN_ID','unknown'),
                'CI head SHA: '+os.environ.get('GITHUB_SHA','unknown'),
                'Scope: controlled 2/2/1 mismatched LLM answers across five independent validator processes.',
-               'Required: UNDETERMINED, at least one real disagree vote, OPEN state, decision_count=0, and successful retry.',
+               'Required: three real disagree votes, recorded leader rotation, unchanged OPEN state, zero decisions, and successful retry. FINALIZED is a lifecycle status and does not prove state commitment.',
                'This is local Studio, NOT Bradbury; validator secrets and raw transaction receipts are excluded.',
                '', '## Safe checkpoints']+['- '+r for r in records]
           for path,title in [('/tmp/cg-safe-tx-status.txt','Database state summary'),
