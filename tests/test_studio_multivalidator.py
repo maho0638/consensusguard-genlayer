@@ -334,3 +334,146 @@ def test_studio_five_mock_validators_finalize_matching_evidence():
     assert case["appeal_used"] is False
     print("STUDIO_PHASE: FIVE_VALIDATOR_RESOLVE_PASS", flush=True)
 
+    if os.environ.get("CONSENSUSGUARD_PHASE3_APPEAL") != "1":
+        return
+
+    # Phase 3: New immutable evidence commitment makes a substantive appeal
+    # that REVERSes the prior VERIFIED decision to REJECTED. Reconfigure
+    # solely the disposable local Studio five-validator mock pool once,
+    # between two completely finalized consensus transactions.
+    original_case = dict(case)
+    original_decision = json.loads(contract.get_decision(args=[0]).call())
+    assert original_decision == decision
+    original_manifest_hash = case["manifest_sha256"]
+
+    appeal_sources = [
+        (
+            "https://evidence-c.example.com/official-correction.txt",
+            "Official correction: version 4.2 was NOT published on 2026-10-10. "
+            "The previously announced date was withdrawn before release.",
+        ),
+        (
+            "https://evidence-d.example.com/archive-correction.txt",
+            "Archive correction: no release of version 4.2 occurred on 2026-10-10; "
+            "that date was only a draft schedule, not a publication.",
+        ),
+    ]
+    appeal_entries = [
+        {"url": url, "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest()}
+        for url, body in appeal_sources
+    ]
+    appeal_manifest = json.dumps(appeal_entries, separators=(",", ":"))
+    canonical_appeal_manifest = json.dumps(
+        appeal_entries, separators=(",", ":"), sort_keys=True
+    )
+    expected_appeal_hash = hashlib.sha256(
+        canonical_appeal_manifest.encode("utf-8")
+    ).hexdigest()
+    assert expected_appeal_hash != original_manifest_hash
+    appeal_llm_response = {
+        "nondet_exec_prompt": {
+            "evidence classifier inside a smart contract":
+                '{"labels":["REFUTES","REFUTES"]}',
+            "": '{"labels":["REFUTES","REFUTES"]}',
+        }
+    }
+    appeal_web_response = {
+        "nondet_web_request": {
+            url: {"method": "GET", "status": 200, "body": body}
+            for url, body in appeal_sources
+        }
+    }
+    appeal_validators = get_validator_factory().batch_create_mock_validators(
+        count=5,
+        mock_llm_response=appeal_llm_response,
+        mock_web_response=appeal_web_response,
+    )
+    appeal_configs = [v.to_dict() for v in appeal_validators]
+    swap = local_client.provider.make_request("sim_replaceValidators", [appeal_configs])
+    assert not swap.get("error"), "Appeal validator mock reconfiguration failed"
+    appeal_registry = swap.get("result")
+    assert isinstance(appeal_registry, list) and len(appeal_registry) == 5
+    appeal_addresses = {str(v.get("address", "")).lower() for v in appeal_registry}
+    assert len(appeal_addresses) == 5
+    assert all(addr.startswith("0x") for addr in appeal_addresses)
+    assert int(local_client.provider.make_request("sim_countValidators", [])["result"]) == 5
+    print("STUDIO_PHASE: APPEAL_VALIDATORS_READY", flush=True)
+
+    print("STUDIO_PHASE: APPEAL_START", flush=True)
+    appealed = contract.appeal(args=[case_id, appeal_manifest]).transact(
+        transaction_context=phase1_context,
+        consensus_max_rotations=3,
+        fees=fees,
+        wait_until="finalized",
+        wait_retries=90,
+    )
+    print("STUDIO_PHASE: APPEAL_FINALIZED", flush=True)
+    assert tx_execution_succeeded(appealed), "appeal contract execution failed"
+    appeal_consensus = appealed.get("consensus_data", {}) or {}
+    appeal_votes = appeal_consensus.get("votes", {}) or {}
+    appeal_receipts = appeal_consensus.get("validators", []) or []
+    assert isinstance(appeal_votes, dict) and len(appeal_votes) == 5
+    assert len(appeal_receipts) == 4
+    assert {str(k).lower() for k in appeal_votes} == appeal_addresses
+    from collections import Counter
+    appeal_counts = Counter(str(v).lower() for v in appeal_votes.values())
+    print("STUDIO_SAFE_APPEAL_VOTE_COUNTS: agree=" + str(appeal_counts["agree"]) +
+          " idle=" + str(appeal_counts["idle"]) +
+          " unexpected=" + str(sum(n for k, n in appeal_counts.items()
+                                  if k not in ("agree", "idle"))), flush=True)
+    assert appeal_counts["agree"] >= 3
+    assert appeal_counts["agree"] + appeal_counts["idle"] == 5
+    appeal_idle = [
+        receipt for receipt in appeal_receipts
+        if isinstance(receipt, dict) and
+        str(receipt.get("vote", "")).lower() == "idle"
+    ]
+    assert len(appeal_idle) == appeal_counts["idle"]
+    assert all(
+        isinstance(r.get("genvm_result"), dict) and
+        r["genvm_result"].get("error_code") == "CONSENSUS_VALIDATOR_QUORUM_REACHED"
+        for r in appeal_idle
+    )
+    print("STUDIO_PHASE: APPEAL_QUORUM_VERIFIED", flush=True)
+
+    # Confirm this is a NEW, independently adjudicated appeal, not a replay,
+    # shadowed cache value, or mutation of the first decision.
+    after_case = json.loads(contract.get_case(args=[case_id]).call())
+    previous_decision = json.loads(contract.get_decision(args=[0]).call())
+    latest_decision = json.loads(contract.get_latest_decision(args=[case_id]).call())
+    appeal_decision = json.loads(contract.get_decision(args=[1]).call())
+    assert previous_decision == original_decision
+    assert latest_decision == appeal_decision
+    assert contract.case_count().call() == 1
+    assert contract.decision_count().call() == 2
+    assert after_case["state"] == "APPEALED"
+    assert after_case["appeal_used"] is True
+    assert after_case["latest_decision_id"] == 1
+    assert after_case["manifest_sha256"] == original_manifest_hash
+    assert after_case["manifest"] == original_case["manifest"]
+    assert after_case["claim"] == original_case["claim"]
+    assert after_case["criteria"] == original_case["criteria"]
+    assert after_case["requester"] == original_case["requester"]
+    assert previous_decision["round"] == 0
+    assert previous_decision["outcome"] == "VERIFIED"
+    assert appeal_decision["round"] == 1
+    assert appeal_decision["outcome"] == "REJECTED"
+    assert appeal_decision["reason_code"] == "REFUTATION_THRESHOLD_MET"
+    assert appeal_decision["support_count"] == 0
+    assert appeal_decision["refute_count"] == 2
+    assert appeal_decision["verified_count"] == 2
+    assert appeal_decision["unclear_count"] == 0
+    assert appeal_decision["manifest_sha256"] == expected_appeal_hash
+    assert appeal_decision["manifest_sha256"] != previous_decision["manifest_sha256"]
+    assert appeal_decision["policy_sha256"] == previous_decision["policy_sha256"]
+    assert appeal_decision["author"] == previous_decision["author"]
+    assert len(appeal_decision["source_results"]) == 2
+    assert all(
+        item["integrity"] == "VERIFIED" and item["label"] == "REFUTES"
+        and item["expected_sha256"] == item["observed_sha256"]
+        for item in appeal_decision["source_results"]
+    )
+    print("STUDIO_SAFE_APPEAL_RESULT: state=APPEALED old=VERIFIED new=REJECTED decisions=2", flush=True)
+    print("STUDIO_PHASE: APPEAL_HISTORY_VERIFIED", flush=True)
+    print("STUDIO_PHASE: FULL_APPEAL_LIFECYCLE_PASS", flush=True)
+
